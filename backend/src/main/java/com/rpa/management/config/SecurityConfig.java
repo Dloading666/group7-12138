@@ -41,6 +41,7 @@ public class SecurityConfig {
                 .requestMatchers("/error").permitAll()
                 .requestMatchers("/auth/login").permitAll()
                 .requestMatchers("/api/auth/login").permitAll()
+                .requestMatchers(HttpMethod.GET, "/user/avatar/**", "/api/user/avatar/**").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/h2-console/**").permitAll()
                 .requestMatchers("/api/v3/api-docs/**", "/api/swagger-ui/**", "/api/swagger-ui.html", "/api/h2-console/**").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

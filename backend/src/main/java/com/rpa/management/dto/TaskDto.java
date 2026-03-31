@@ -21,6 +21,7 @@ public record TaskDto(
     Long createdByUserId,
     String params,
     String result,
+    LocalDateTime createdAt,
     LocalDateTime startTime,
     LocalDateTime endTime,
     Integer duration
@@ -40,6 +41,7 @@ public record TaskDto(
             task.getCreatedByUserId(),
             task.getParams(),
             task.getResult(),
+            task.getCreatedAt(),
             task.getStartTime(),
             task.getEndTime(),
             task.getDuration()

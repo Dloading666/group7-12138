@@ -11,13 +11,19 @@ import com.rpa.management.common.enums.UserStatus;
 import com.rpa.management.entity.Permission;
 import com.rpa.management.entity.Role;
 import com.rpa.management.entity.RolePermission;
+import com.rpa.management.entity.ExecutionLog;
 import com.rpa.management.entity.Robot;
+import com.rpa.management.entity.OperationLog;
 import com.rpa.management.entity.Task;
 import com.rpa.management.entity.User;
+import com.rpa.management.entity.SystemSetting;
 import com.rpa.management.repository.PermissionRepository;
 import com.rpa.management.repository.RolePermissionRepository;
 import com.rpa.management.repository.RoleRepository;
+import com.rpa.management.repository.ExecutionLogRepository;
+import com.rpa.management.repository.OperationLogRepository;
 import com.rpa.management.repository.RobotRepository;
+import com.rpa.management.repository.SystemSettingRepository;
 import com.rpa.management.repository.TaskRepository;
 import com.rpa.management.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +48,9 @@ public class DataInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final TaskRepository taskRepository;
     private final RobotRepository robotRepository;
+    private final ExecutionLogRepository executionLogRepository;
+    private final OperationLogRepository operationLogRepository;
+    private final SystemSettingRepository systemSettingRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
@@ -53,6 +62,9 @@ public class DataInitializer implements CommandLineRunner {
         seedUsers(adminRole, operatorRole);
         seedRobots();
         seedTasks();
+        seedExecutionLogs();
+        seedOperationLogs();
+        seedSettings();
     }
 
     private Map<String, Permission> seedPermissions() {
@@ -294,5 +306,93 @@ public class DataInitializer implements CommandLineRunner {
         task.setCreatedAt(createdAt);
         task.setUpdatedAt(createdAt);
         taskRepository.save(task);
+    }
+
+    private void seedExecutionLogs() {
+        if (executionLogRepository.count() > 0) {
+            return;
+        }
+        saveExecutionLog(1L, 1L, "INFO", "任务已进入执行队列", LocalDateTime.now().minusHours(6));
+        saveExecutionLog(1L, 1L, "WARN", "执行节点发生一次重试", LocalDateTime.now().minusHours(5));
+        saveExecutionLog(2L, 2L, "INFO", "任务执行完成", LocalDateTime.now().minusHours(4));
+        saveExecutionLog(4L, 1L, "ERROR", "任务执行失败，等待人工处理", LocalDateTime.now().minusHours(2));
+    }
+
+    private void saveExecutionLog(Long taskId, Long robotId, String level, String message, LocalDateTime createdAt) {
+        ExecutionLog log = new ExecutionLog()
+            .setTaskId(taskId)
+            .setRobotId(robotId)
+            .setLevel(level)
+            .setMessage(message);
+        log.setCreatedAt(createdAt);
+        log.setUpdatedAt(createdAt);
+        executionLogRepository.save(log);
+    }
+
+    private void seedOperationLogs() {
+        if (operationLogRepository.count() > 0) {
+            return;
+        }
+        saveOperationLog(1L, "admin", "登录系统", "POST /api/auth/login", "{\"username\":\"admin\"}", "127.0.0.1", "SUCCESS", null, 120L, LocalDateTime.now().minusHours(8));
+        saveOperationLog(1L, "admin", "创建任务", "POST /api/tasks", "{\"taskNo\":\"T005\"}", "127.0.0.1", "SUCCESS", null, 240L, LocalDateTime.now().minusHours(7));
+        saveOperationLog(2L, "user01", "查看监控", "GET /api/monitor/realtime", "{}", "127.0.0.1", "SUCCESS", null, 60L, LocalDateTime.now().minusHours(3));
+        saveOperationLog(1L, "admin", "调整角色权限", "PUT /api/roles/1/permissions", "{\"permissionIds\":[1,2,3]}", "127.0.0.1", "SUCCESS", null, 180L, LocalDateTime.now().minusHours(2));
+    }
+
+    private void saveOperationLog(Long userId,
+                                  String username,
+                                  String operation,
+                                  String method,
+                                  String params,
+                                  String ip,
+                                  String status,
+                                  String errorMsg,
+                                  Long duration,
+                                  LocalDateTime createdAt) {
+        OperationLog log = new OperationLog()
+            .setUserId(userId)
+            .setUsername(username)
+            .setOperation(operation)
+            .setMethod(method)
+            .setParams(params)
+            .setIp(ip)
+            .setStatus(status)
+            .setErrorMsg(errorMsg)
+            .setDuration(duration);
+        log.setCreatedAt(createdAt);
+        log.setUpdatedAt(createdAt);
+        operationLogRepository.save(log);
+    }
+
+    private void seedSettings() {
+        if (systemSettingRepository.count() > 0) {
+            return;
+        }
+        saveSetting("basic", "systemName", "RPA 管理系统", "基础设置 - systemName");
+        saveSetting("basic", "systemSubtitle", "自动化任务与执行监控平台", "基础设置 - systemSubtitle");
+        saveSetting("basic", "companyName", "RPA Platform", "基础设置 - companyName");
+        saveSetting("basic", "supportEmail", "support@example.com", "基础设置 - supportEmail");
+        saveSetting("basic", "supportPhone", "400-000-0000", "基础设置 - supportPhone");
+        saveSetting("basic", "loginNotice", "请使用授权账号登录系统", "基础设置 - loginNotice");
+        saveSetting("basic", "maintenanceMode", "false", "基础设置 - maintenanceMode");
+
+        saveSetting("notification", "emailEnabled", "false", "通知设置 - emailEnabled");
+        saveSetting("notification", "emailHost", "", "通知设置 - emailHost");
+        saveSetting("notification", "emailPort", "587", "通知设置 - emailPort");
+        saveSetting("notification", "emailUsername", "", "通知设置 - emailUsername");
+        saveSetting("notification", "emailFrom", "noreply@example.com", "通知设置 - emailFrom");
+        saveSetting("notification", "webhookEnabled", "false", "通知设置 - webhookEnabled");
+        saveSetting("notification", "webhookUrl", "", "通知设置 - webhookUrl");
+        saveSetting("notification", "taskFailureAlert", "true", "通知设置 - taskFailureAlert");
+        saveSetting("notification", "robotOfflineAlert", "true", "通知设置 - robotOfflineAlert");
+    }
+
+    private void saveSetting(String group, String key, String value, String description) {
+        SystemSetting setting = new SystemSetting()
+            .setSettingGroup(group)
+            .setSettingKey(key)
+            .setSettingValue(value)
+            .setDescription(description);
+        systemSettingRepository.save(setting);
     }
 }

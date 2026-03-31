@@ -113,6 +113,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
+import { ElMessage } from 'element-plus'
 import { CircleCheck, Cpu, Document, Loading } from '@element-plus/icons-vue'
 import StatCard from '@/components/StatCard.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -130,6 +131,7 @@ const recentTasks = ref<TaskItem[]>(demoDashboard.recentTasks)
 
 let lineChart: echarts.ECharts | null = null
 let pieChart: echarts.ECharts | null = null
+let fallbackNotified = false
 
 const todayText = computed(() => {
   const date = new Date()
@@ -171,12 +173,17 @@ async function loadOverview() {
     if (res.code === 200 && res.data) {
       overview.value = res.data
       recentTasks.value = res.data.recentTasks || []
+      fallbackNotified = false
       return
     }
   } catch {
     // fall back to demo data below
   }
 
+  if (!fallbackNotified) {
+    ElMessage.warning('仪表盘服务暂时不可用，当前展示的是演示数据')
+    fallbackNotified = true
+  }
   overview.value = demoDashboard
   recentTasks.value = demoDashboard.recentTasks
 }
@@ -186,6 +193,7 @@ function renderCharts() {
 
   lineChart = echarts.init(lineChartRef.value)
   pieChart = echarts.init(pieChartRef.value)
+  const totalStatusCount = overview.value.statusDistribution.reduce((sum, item) => sum + Number(item.value || 0), 0)
 
   lineChart.setOption({
     tooltip: { trigger: 'axis' },
@@ -219,14 +227,63 @@ function renderCharts() {
 
   pieChart.setOption({
     tooltip: { trigger: 'item' },
-    legend: { orient: 'vertical', left: 12, top: 24 },
+    legend: {
+      left: 'center',
+      bottom: 4,
+      icon: 'roundRect',
+      itemWidth: 12,
+      itemHeight: 12,
+      textStyle: {
+        color: '#5f7596',
+        fontSize: 13
+      }
+    },
+    graphic: [
+      {
+        type: 'text',
+        left: 'center',
+        top: '39%',
+        style: {
+          text: String(totalStatusCount),
+          fill: '#12203a',
+          fontSize: 34,
+          fontWeight: 800,
+          textAlign: 'center'
+        }
+      },
+      {
+        type: 'text',
+        left: 'center',
+        top: '51%',
+        style: {
+          text: '任务总量',
+          fill: '#7a8fab',
+          fontSize: 13,
+          fontWeight: 500,
+          textAlign: 'center'
+        }
+      }
+    ],
     series: [
       {
         type: 'pie',
-        radius: ['42%', '72%'],
-        center: ['60%', '56%'],
+        radius: ['50%', '71%'],
+        center: ['50%', '42%'],
         data: overview.value.statusDistribution,
-        label: { formatter: '{b}\n{d}%' }
+        avoidLabelOverlap: true,
+        label: { show: false },
+        labelLine: { show: false },
+        emphasis: {
+          scale: true,
+          scaleSize: 6,
+          label: {
+            show: true,
+            formatter: '{b}\n{c} 项',
+            fontSize: 16,
+            fontWeight: 700,
+            color: '#12203a'
+          }
+        }
       }
     ]
   })

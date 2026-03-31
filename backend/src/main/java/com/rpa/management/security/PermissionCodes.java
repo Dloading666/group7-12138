@@ -27,6 +27,16 @@ public final class PermissionCodes {
     public static final String PERMISSION_DELETE = "system:permission:delete";
     public static final String PERMISSION_STATUS = "system:permission:status";
 
+    public static final String MONITOR_VIEW = "monitor:view";
+    public static final String MONITOR_LOG = "monitor:log";
+
+    public static final String STATISTICS_VIEW = "statistics:view";
+    public static final String STATISTICS_QUERY = "statistics:query";
+
+    public static final String SETTINGS_VIEW = "settings:view";
+    public static final String SETTINGS_BASIC = "settings:basic";
+    public static final String SETTINGS_NOTIFICATION = "settings:notification";
+
     public static final String TASK_VIEW = "task:view";
     public static final String TASK_CREATE = "task:create";
     public static final String TASK_UPDATE = "task:update";
@@ -40,4 +50,7 @@ public final class PermissionCodes {
     public static final String ROBOT_DELETE = "robot:delete";
     public static final String ROBOT_START = "robot:start";
     public static final String ROBOT_STOP = "robot:stop";
+
+    public static final String WORKFLOW_VIEW = "workflow:view";
+    public static final String WORKFLOW_DESIGN = "workflow:design";
 }

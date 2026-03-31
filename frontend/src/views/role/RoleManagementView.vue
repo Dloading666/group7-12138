@@ -13,7 +13,7 @@
     <section class="surface-panel table-shell">
       <el-table :data="rows" :loading="loading" height="420">
         <el-table-column prop="name" label="角色名称" width="160" />
-        <el-table-column prop="code" label="角色编码" width="160" />
+        <el-table-column prop="code" label="权限编码" width="160" />
         <el-table-column prop="description" label="描述" min-width="240" />
         <el-table-column prop="userCount" label="用户数" width="100" />
         <el-table-column prop="status" label="状态" width="110">
@@ -56,8 +56,8 @@
         <el-form-item label="角色名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入角色名称" />
         </el-form-item>
-        <el-form-item label="角色编码" prop="code">
-          <el-input v-model="form.code" placeholder="请输入角色编码" />
+        <el-form-item label="权限编码" prop="code">
+          <el-input v-model="form.code" placeholder="请输入权限编码" />
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="4" placeholder="请输入描述" />
@@ -137,7 +137,7 @@ const form = reactive({
 
 const rules: FormRules<typeof form> = {
   name: [{ required: true, message: '请输入角色名称', trigger: 'blur' }],
-  code: [{ required: true, message: '请输入角色编码', trigger: 'blur' }]
+  code: [{ required: true, message: '请输入权限编码', trigger: 'blur' }]
 }
 
 async function loadData() {

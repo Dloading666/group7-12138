@@ -303,7 +303,7 @@ async function loadTasks() {
       return
     }
   } catch {
-    // fall back to demo data below
+    ElMessage.warning('任务服务暂时不可用，已切换为演示数据')
   } finally {
     loading.value = false
   }
@@ -314,7 +314,7 @@ async function loadTasks() {
 
 function search() {
   currentPage.value = 1
-  loadTasks()
+  void loadTasks()
 }
 
 function reset() {
@@ -323,7 +323,7 @@ function reset() {
   filters.status = ''
   filters.priority = ''
   currentPage.value = 1
-  loadTasks()
+  void loadTasks()
 }
 
 function openCreate() {
@@ -410,7 +410,7 @@ async function toggleTask(row: TaskItem, action: 'start' | 'stop') {
       ElMessage.success('任务已启动')
     } else {
       if (!offlineMode.value) await stopTask(row.id)
-      row.status = 'stopped'
+      row.status = 'failed'
       ElMessage.success('任务已停止')
     }
     await loadTasks()
@@ -425,13 +425,18 @@ async function removeTask(row: TaskItem) {
     return
   }
   await ElMessageBox.confirm(`确认删除任务「${row.name}」吗？`, '提示', { type: 'warning' })
-  try {
-    if (!offlineMode.value) await deleteTask(row.id)
-  } catch {
-    // keep optimistic behavior for demo mode
-  } finally {
+  if (offlineMode.value) {
     rows.value = rows.value.filter((item) => item.id !== row.id)
     ElMessage.success('删除成功')
+    return
+  }
+
+  try {
+    await deleteTask(row.id)
+    rows.value = rows.value.filter((item) => item.id !== row.id)
+    ElMessage.success('删除成功')
+  } catch {
+    ElMessage.error('删除失败')
   }
 }
 

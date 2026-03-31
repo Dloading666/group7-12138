@@ -64,6 +64,64 @@ class AuthAndPermissionSmokeTest {
         assertThat(root.path("data").size()).isGreaterThan(0);
     }
 
+    @Test
+    void authenticatedUserCanUpdateOwnProfile() throws Exception {
+        String token = login("admin", "admin123");
+
+        String updateResponse = putJson("/user/profile", """
+                {
+                  "realName":"Admin Updated",
+                  "phone":"13900001111",
+                  "email":"admin-updated@example.com",
+                  "avatar":"http://localhost:8080/api/user/avatar/test.png"
+                }
+                """, token)
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+        JsonNode updateRoot = objectMapper.readTree(updateResponse);
+        assertThat(updateRoot.get("code").asInt()).isEqualTo(200);
+        assertThat(updateRoot.path("data").path("realName").asText()).isEqualTo("Admin Updated");
+        assertThat(updateRoot.path("data").path("phone").asText()).isEqualTo("13900001111");
+        assertThat(updateRoot.path("data").path("email").asText()).isEqualTo("admin-updated@example.com");
+
+        String meResponse = mockMvc.perform(get("/auth/me")
+                .header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+        JsonNode meRoot = objectMapper.readTree(meResponse);
+        assertThat(meRoot.path("data").path("user").path("realName").asText()).isEqualTo("Admin Updated");
+        assertThat(meRoot.path("data").path("user").path("phone").asText()).isEqualTo("13900001111");
+        assertThat(meRoot.path("data").path("user").path("email").asText()).isEqualTo("admin-updated@example.com");
+    }
+
+    @Test
+    void userCanChangeOwnPasswordWithOldPassword() throws Exception {
+        String token = login("user01", "user123");
+
+        String response = putJson("/user/password", """
+                {
+                  "oldPassword":"user123",
+                  "newPassword":"user456"
+                }
+                """, token)
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+        JsonNode root = objectMapper.readTree(response);
+        assertThat(root.get("code").asInt()).isEqualTo(200);
+
+        String newToken = login("user01", "user456");
+        assertThat(newToken).isNotBlank();
+    }
+
     private String login(String username, String password) throws Exception {
         String response = mockMvc.perform(post("/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -77,5 +135,12 @@ class AuthAndPermissionSmokeTest {
 
         JsonNode root = objectMapper.readTree(response);
         return root.path("data").path("accessToken").asText();
+    }
+
+    private org.springframework.test.web.servlet.ResultActions putJson(String path, String json, String token) throws Exception {
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path)
+            .header("Authorization", "Bearer " + token)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json));
     }
 }

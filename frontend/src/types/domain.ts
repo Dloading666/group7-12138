@@ -99,3 +99,39 @@ export interface RobotItem {
   lastHeartbeat?: string
   description?: string
 }
+
+export interface ExecutionLogItem {
+  id: number
+  time: string
+  level: 'INFO' | 'WARN' | 'ERROR'
+  source: 'task' | 'robot' | 'system'
+  title: string
+  message: string
+  taskId?: string
+  taskName?: string
+  robotId?: number
+  robotName?: string
+  duration?: number
+}
+
+export interface BasicSettingsState {
+  systemName: string
+  systemSubtitle: string
+  companyName: string
+  supportEmail: string
+  supportPhone: string
+  loginNotice: string
+  maintenanceMode: boolean
+}
+
+export interface NotificationSettingsState {
+  emailEnabled: boolean
+  emailHost: string
+  emailPort: number
+  emailUsername: string
+  emailFrom: string
+  webhookEnabled: boolean
+  taskFailureAlert: boolean
+  robotOfflineAlert: boolean
+  webhookUrl: string
+}

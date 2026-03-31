@@ -1,4 +1,4 @@
-import type { PermissionNode, RoleItem, UserItem } from '@/types/domain'
+import type { PermissionNode, RobotItem, RoleItem, TaskItem, UserItem } from '@/types/domain'
 
 type StatusLike = string | undefined | null
 
@@ -8,6 +8,48 @@ export function normalizeStatus(status: StatusLike): 'active' | 'inactive' {
 
 export function toBackendStatus(status: StatusLike): 'ACTIVE' | 'INACTIVE' {
   return normalizeStatus(status) === 'inactive' ? 'INACTIVE' : 'ACTIVE'
+}
+
+export function normalizeTaskStatus(status: StatusLike): TaskItem['status'] {
+  const value = String(status || '').toLowerCase()
+  if (value === 'running' || value === 'completed' || value === 'failed' || value === 'stopped') {
+    return value
+  }
+  return 'pending'
+}
+
+export function toBackendTaskStatus(status?: TaskItem['status']) {
+  const value = String(status || 'pending').toUpperCase()
+  if (value === 'RUNNING' || value === 'COMPLETED' || value === 'FAILED') return value
+  return 'PENDING'
+}
+
+export function normalizeTaskPriority(priority?: TaskItem['priority'] | string | null): TaskItem['priority'] {
+  const value = String(priority || '').toLowerCase()
+  if (value === 'high' || value === 'low') return value
+  return 'medium'
+}
+
+export function toBackendTaskPriority(priority?: TaskItem['priority']) {
+  return normalizeTaskPriority(priority).toUpperCase()
+}
+
+export function normalizeExecuteType(type?: TaskItem['executeType'] | string | null): TaskItem['executeType'] {
+  return String(type || '').toLowerCase() === 'scheduled' ? 'scheduled' : 'immediate'
+}
+
+export function toBackendExecuteType(type?: TaskItem['executeType']): 'IMMEDIATE' | 'SCHEDULED' {
+  return normalizeExecuteType(type) === 'scheduled' ? 'SCHEDULED' : 'IMMEDIATE'
+}
+
+export function normalizeRobotStatus(status?: RobotItem['status'] | string | null): RobotItem['status'] {
+  const value = String(status || '').toLowerCase()
+  if (value === 'online' || value === 'busy' || value === 'disabled') return value
+  return 'offline'
+}
+
+export function toBackendRobotStatus(status?: RobotItem['status']) {
+  return normalizeRobotStatus(status).toUpperCase()
 }
 
 function asRecord(payload: unknown) {
@@ -66,6 +108,46 @@ export function mapPermissionNode(payload: unknown): PermissionNode {
     sortOrder: data.sortOrder == null ? 0 : Number(data.sortOrder),
     description: data.description ? String(data.description) : '',
     children
+  }
+}
+
+export function mapTaskItem(payload: unknown): TaskItem {
+  const data = asRecord(payload)
+  const robotId = data.robotId == null ? undefined : Number(data.robotId)
+  return {
+    id: Number(data.id || 0),
+    taskId: data.taskId ? String(data.taskId) : data.taskNo ? String(data.taskNo) : '',
+    name: String(data.name || ''),
+    type: data.type ? String(data.type) : '',
+    status: normalizeTaskStatus(data.status as StatusLike),
+    progress: data.progress == null ? 0 : Number(data.progress),
+    priority: normalizeTaskPriority(data.priority as string | null | undefined),
+    robotId,
+    robotName: data.robotName ? String(data.robotName) : robotId ? `Robot-${String(robotId).padStart(2, '0')}` : '',
+    executeType: normalizeExecuteType(data.executeType as string | null | undefined),
+    scheduledTime: data.scheduledTime ? String(data.scheduledTime) : data.scheduleTime ? String(data.scheduleTime) : '',
+    createTime: data.createTime ? String(data.createTime) : data.createdAt ? String(data.createdAt) : '',
+    startTime: data.startTime ? String(data.startTime) : '',
+    endTime: data.endTime ? String(data.endTime) : '',
+    description: data.description ? String(data.description) : '',
+    result: data.result ? String(data.result) : '',
+    errorMessage: data.errorMessage ? String(data.errorMessage) : '',
+    userName: data.userName ? String(data.userName) : ''
+  }
+}
+
+export function mapRobotItem(payload: unknown): RobotItem {
+  const data = asRecord(payload)
+  const id = Number(data.id || 0)
+  return {
+    id,
+    robotId: data.robotId ? String(data.robotId) : id ? `R-${String(id).padStart(3, '0')}` : '',
+    name: String(data.name || ''),
+    ip: data.ip ? String(data.ip) : data.ipAddress ? String(data.ipAddress) : '',
+    status: normalizeRobotStatus(data.status as string | null | undefined),
+    taskCount: data.taskCount == null ? 0 : Number(data.taskCount),
+    lastHeartbeat: data.lastHeartbeat ? String(data.lastHeartbeat) : '',
+    description: data.description ? String(data.description) : data.type ? String(data.type) : ''
   }
 }
 

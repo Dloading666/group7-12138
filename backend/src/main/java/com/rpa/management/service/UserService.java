@@ -4,11 +4,13 @@ import com.rpa.management.common.enums.UserStatus;
 import com.rpa.management.common.exception.BadRequestBusinessException;
 import com.rpa.management.common.exception.ForbiddenBusinessException;
 import com.rpa.management.common.exception.ResourceNotFoundException;
+import com.rpa.management.dto.ChangePasswordRequest;
 import com.rpa.management.dto.PermissionScopeDto;
 import com.rpa.management.dto.RoleDto;
 import com.rpa.management.dto.UserDto;
 import com.rpa.management.dto.UserPasswordRequest;
 import com.rpa.management.dto.UserPermissionOverrideRequest;
+import com.rpa.management.dto.UserProfileUpdateRequest;
 import com.rpa.management.dto.UserStatusRequest;
 import com.rpa.management.dto.UserUpsertRequest;
 import com.rpa.management.entity.Role;
@@ -123,6 +125,36 @@ public class UserService {
         }
         User user = getUser(id);
         user.setPassword(passwordEncoder.encode(request.password()));
+        return UserDto.from(userRepository.save(user), findRole(user.getRoleId()));
+    }
+
+    @Transactional
+    public UserDto updateProfile(Long id, UserProfileUpdateRequest request) {
+        User user = getUser(id);
+        user.setRealName(request.realName())
+            .setEmail(request.email())
+            .setPhone(request.phone())
+            .setAvatar(request.avatar());
+        return UserDto.from(userRepository.save(user), findRole(user.getRoleId()));
+    }
+
+    @Transactional
+    public UserDto updateAvatar(Long id, String avatarUrl) {
+        User user = getUser(id);
+        user.setAvatar(avatarUrl);
+        return UserDto.from(userRepository.save(user), findRole(user.getRoleId()));
+    }
+
+    @Transactional
+    public UserDto changeOwnPassword(Long id, ChangePasswordRequest request) {
+        if (request.newPassword() == null || request.newPassword().isBlank()) {
+            throw new BadRequestBusinessException("New password is required");
+        }
+        User user = getUser(id);
+        if (!passwordEncoder.matches(request.oldPassword(), user.getPassword())) {
+            throw new BadRequestBusinessException("Original password is incorrect");
+        }
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
         return UserDto.from(userRepository.save(user), findRole(user.getRoleId()));
     }
 

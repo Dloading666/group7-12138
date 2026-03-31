@@ -3,10 +3,11 @@ param(
   [int]$DbPort = 3306,
   [string]$DbName = 'rpa',
   [string]$DbUser = 'root',
-  [string]$DbPassword = 'root',
+  [string]$DbPassword = '123456',
   [string]$FrontendHost = '127.0.0.1',
   [int]$FrontendPort = 5173,
   [switch]$UseMySql,
+  [switch]$UseEmbeddedH2,
   [switch]$DryRun
 )
 
@@ -17,7 +18,7 @@ $backendDir = Join-Path $rootDir 'backend'
 $frontendDir = Join-Path $rootDir 'frontend'
 $jdbcUrl = "jdbc:mysql://$($DbHost):$($DbPort)/$($DbName)?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai"
 
-if ($UseMySql) {
+if (-not $UseEmbeddedH2) {
   $backendCommand = @"
 `$env:SPRING_PROFILES_ACTIVE = 'mysql'
 `$env:SPRING_DATASOURCE_URL = '$jdbcUrl'

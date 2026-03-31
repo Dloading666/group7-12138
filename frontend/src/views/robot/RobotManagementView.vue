@@ -4,12 +4,15 @@
       <div class="toolbar-head">
         <div>
           <h1>机器人管理</h1>
-          <p>管理机器人在线状态、执行任务数和基础信息。</p>
+          <p>管理机器人在线状态、任务数量和基础信息，异常时会明确提示是否切换到了演示数据。</p>
         </div>
         <el-button v-permission="'robot:create'" type="primary" @click="openCreate">+ 新建机器人</el-button>
       </div>
+
       <el-form :inline="true" :model="filters" class="filter-form">
-        <el-form-item label="名称"><el-input v-model="filters.name" placeholder="请输入机器人名称" clearable /></el-form-item>
+        <el-form-item label="名称">
+          <el-input v-model="filters.name" placeholder="请输入机器人名称" clearable />
+        </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="filters.status" clearable placeholder="请选择" style="width: 150px">
             <el-option label="在线" value="online" />
@@ -27,23 +30,43 @@
 
     <section class="surface-panel table-shell">
       <el-table :data="filteredRows" :loading="loading" height="520">
-        <el-table-column prop="name" label="机器人名称" width="150" />
+        <el-table-column prop="name" label="机器人名称" width="180" />
         <el-table-column prop="robotId" label="编号" width="120" />
-        <el-table-column prop="ip" label="IP 地址" width="140" />
+        <el-table-column prop="ip" label="IP 地址" width="160" />
         <el-table-column prop="status" label="状态" width="110">
-          <template #default="{ row }"><el-tag :type="statusTag(row.status)">{{ statusText(row.status) }}</el-tag></template>
+          <template #default="{ row }">
+            <el-tag :type="statusTag(row.status)">{{ statusText(row.status) }}</el-tag>
+          </template>
         </el-table-column>
         <el-table-column prop="taskCount" label="任务数" width="100" />
         <el-table-column prop="lastHeartbeat" label="最后心跳" width="180">
           <template #default="{ row }">{{ formatDateTime(row.lastHeartbeat) }}</template>
         </el-table-column>
-        <el-table-column prop="description" label="描述" min-width="200" />
+        <el-table-column prop="description" label="说明" min-width="220" />
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="editRobot(row)">编辑</el-button>
-            <el-button v-permission="'robot:start'" size="small" type="success" @click="start(row)" :disabled="row.status === 'busy'">启动</el-button>
-            <el-button v-permission="'robot:stop'" size="small" type="warning" @click="stop(row)" :disabled="row.status === 'offline'">停止</el-button>
-            <el-button v-permission="'robot:delete'" size="small" type="danger" @click="removeRobot(row)">删除</el-button>
+            <el-button
+              v-permission="'robot:start'"
+              size="small"
+              type="success"
+              :disabled="row.status === 'online' || row.status === 'busy'"
+              @click="start(row)"
+            >
+              启动
+            </el-button>
+            <el-button
+              v-permission="'robot:stop'"
+              size="small"
+              type="warning"
+              :disabled="row.status === 'offline'"
+              @click="stop(row)"
+            >
+              停止
+            </el-button>
+            <el-button v-permission="'robot:delete'" size="small" type="danger" @click="removeRobot(row)">
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -51,9 +74,12 @@
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="96px">
-        <el-form-item label="名称" prop="name"><el-input v-model="form.name" placeholder="请输入机器人名称" /></el-form-item>
-        <el-form-item label="编号" prop="robotId"><el-input v-model="form.robotId" placeholder="请输入机器人编号" /></el-form-item>
-        <el-form-item label="IP 地址" prop="ip"><el-input v-model="form.ip" placeholder="请输入 IP 地址" /></el-form-item>
+        <el-form-item label="名称" prop="name">
+          <el-input v-model="form.name" placeholder="请输入机器人名称" />
+        </el-form-item>
+        <el-form-item label="IP 地址" prop="ip">
+          <el-input v-model="form.ip" placeholder="请输入 IP 地址" />
+        </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-select v-model="form.status" style="width: 100%">
             <el-option label="在线" value="online" />
@@ -62,7 +88,9 @@
             <el-option label="禁用" value="disabled" />
           </el-select>
         </el-form-item>
-        <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="4" placeholder="请输入描述" /></el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="form.description" type="textarea" :rows="4" placeholder="请输入说明" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -74,7 +102,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { createRobot, deleteRobot, getRobots, startRobot, stopRobot, updateRobot } from '@/api/robots'
 import { demoRobots } from '@/mock/demo-data'
 import { formatDateTime } from '@/utils/format'
@@ -82,6 +110,7 @@ import type { RobotItem } from '@/types/domain'
 
 const loading = ref(false)
 const saving = ref(false)
+const offlineMode = ref(false)
 const rows = ref<RobotItem[]>(demoRobots)
 const dialogVisible = ref(false)
 const dialogTitle = ref('新建机器人')
@@ -95,7 +124,6 @@ const filters = reactive({
 
 const form = reactive<Partial<RobotItem>>({
   name: '',
-  robotId: '',
   ip: '',
   status: 'online',
   description: ''
@@ -103,7 +131,6 @@ const form = reactive<Partial<RobotItem>>({
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入机器人名称', trigger: 'blur' }],
-  robotId: [{ required: true, message: '请输入机器人编号', trigger: 'blur' }],
   ip: [{ required: true, message: '请输入 IP 地址', trigger: 'blur' }]
 }
 
@@ -116,48 +143,58 @@ const filteredRows = computed(() =>
 )
 
 function statusText(status: RobotItem['status']) {
-  const map = { online: '在线', offline: '离线', busy: '忙碌', disabled: '禁用' }
-  return map[status] || status
+  return { online: '在线', offline: '离线', busy: '忙碌', disabled: '禁用' }[status]
 }
 
 function statusTag(status: RobotItem['status']) {
-  const map = { online: 'success', busy: 'warning', offline: 'info', disabled: 'danger' }
-  return map[status] || 'info'
+  return { online: 'success', busy: 'warning', offline: 'info', disabled: 'danger' }[status]
 }
 
 async function loadData() {
   loading.value = true
   try {
     const res = await getRobots(filters)
-    rows.value = res.data?.list || demoRobots
+    if (res.code === 200 && res.data) {
+      rows.value = res.data.list || []
+      offlineMode.value = false
+      return
+    }
   } catch {
-    rows.value = demoRobots
+    ElMessage.warning('机器人服务暂时不可用，已切换为演示数据')
   } finally {
     loading.value = false
   }
+
+  rows.value = demoRobots
+  offlineMode.value = true
 }
 
 function search() {
-  loadData()
+  void loadData()
 }
 
 function reset() {
   filters.name = ''
   filters.status = ''
-  loadData()
+  void loadData()
 }
 
 function openCreate() {
   dialogTitle.value = '新建机器人'
   editingId.value = null
-  Object.assign(form, { name: '', robotId: '', ip: '', status: 'online', description: '' })
+  Object.assign(form, { name: '', ip: '', status: 'online', description: '' })
   dialogVisible.value = true
 }
 
 function editRobot(row: RobotItem) {
   dialogTitle.value = '编辑机器人'
   editingId.value = row.id
-  Object.assign(form, row)
+  Object.assign(form, {
+    name: row.name,
+    ip: row.ip,
+    status: row.status,
+    description: row.description
+  })
   dialogVisible.value = true
 }
 
@@ -166,16 +203,38 @@ async function saveRobot() {
     if (!valid) return
     saving.value = true
     try {
-      if (editingId.value) {
-        await updateRobot(editingId.value, form)
+      const payload = { ...form } as Partial<RobotItem>
+      if (offlineMode.value) {
+        if (editingId.value) {
+          rows.value = rows.value.map((item) =>
+            item.id === editingId.value ? ({ ...item, ...payload } as RobotItem) : item
+          )
+        } else {
+          const id = Date.now()
+          rows.value = [
+            {
+              id,
+              robotId: `R-${String(id).slice(-3)}`,
+              name: payload.name || '',
+              ip: payload.ip || '',
+              status: (payload.status as RobotItem['status']) || 'online',
+              description: payload.description || '',
+              taskCount: 0,
+              lastHeartbeat: new Date().toISOString()
+            },
+            ...rows.value
+          ]
+        }
+      } else if (editingId.value) {
+        await updateRobot(editingId.value, payload)
       } else {
-        await createRobot(form)
+        await createRobot(payload)
       }
+      ElMessage.success(editingId.value ? '机器人已更新' : '机器人已创建')
       dialogVisible.value = false
       await loadData()
     } catch {
-      dialogVisible.value = false
-      await loadData()
+      ElMessage.error('保存机器人失败')
     } finally {
       saving.value = false
     }
@@ -184,36 +243,53 @@ async function saveRobot() {
 
 async function start(row: RobotItem) {
   try {
-    await startRobot(row.id)
+    if (offlineMode.value) {
+      row.status = 'online'
+      row.lastHeartbeat = new Date().toISOString()
+    } else {
+      await startRobot(row.id)
+      await loadData()
+    }
+    ElMessage.success('机器人已启动')
   } catch {
-    // ignore
-  } finally {
-    row.status = 'busy'
+    ElMessage.error('启动机器人失败')
   }
 }
 
 async function stop(row: RobotItem) {
   try {
-    await stopRobot(row.id)
+    if (offlineMode.value) {
+      row.status = 'offline'
+    } else {
+      await stopRobot(row.id)
+      await loadData()
+    }
+    ElMessage.success('机器人已停止')
   } catch {
-    // ignore
-  } finally {
-    row.status = 'offline'
+    ElMessage.error('停止机器人失败')
   }
 }
 
 async function removeRobot(row: RobotItem) {
-  await ElMessageBox.confirm(`确认删除机器人「${row.name}」吗？`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(`确认删除机器人“${row.name}”吗？`, '提示', { type: 'warning' })
+  if (offlineMode.value) {
+    rows.value = rows.value.filter((item) => item.id !== row.id)
+    ElMessage.success('删除成功')
+    return
+  }
+
   try {
     await deleteRobot(row.id)
+    await loadData()
+    ElMessage.success('删除成功')
   } catch {
-    // ignore
-  } finally {
-    rows.value = rows.value.filter((item) => item.id !== row.id)
+    ElMessage.error('删除机器人失败')
   }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  void loadData()
+})
 </script>
 
 <style scoped lang="scss">
@@ -245,4 +321,3 @@ onMounted(loadData)
   color: var(--app-text-muted);
 }
 </style>
-
