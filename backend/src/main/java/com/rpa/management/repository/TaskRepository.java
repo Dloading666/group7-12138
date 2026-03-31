@@ -1,5 +1,6 @@
 package com.rpa.management.repository;
 
+import com.rpa.management.common.enums.TaskStatus;
 import com.rpa.management.entity.Task;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -13,4 +14,6 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     boolean existsByTaskNo(String taskNo);
 
     List<Task> findAllByOrderByCreatedAtDesc();
+
+    List<Task> findAllByStatus(TaskStatus status);
 }

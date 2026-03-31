@@ -101,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { createRobot, deleteRobot, getRobots, startRobot, stopRobot, updateRobot } from '@/api/robots'
 import { demoRobots } from '@/mock/demo-data'
@@ -287,8 +287,18 @@ async function removeRobot(row: RobotItem) {
   }
 }
 
+// ── 每 12 秒刷新机器人状态与心跳（与后端心跳周期保持一致）──
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
   void loadData()
+  heartbeatTimer = setInterval(() => {
+    if (!offlineMode.value) void loadData()
+  }, 12000)
+})
+
+onUnmounted(() => {
+  if (heartbeatTimer) clearInterval(heartbeatTimer)
 })
 </script>
 

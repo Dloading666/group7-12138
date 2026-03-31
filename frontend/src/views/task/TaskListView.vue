@@ -195,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { createTask, deleteTask, getTasks, startTask, stopTask, updateTask } from '@/api/tasks'
@@ -440,6 +440,34 @@ async function removeTask(row: TaskItem) {
   }
 }
 
+// ── 自动轮询：有任务在执行时每 3 秒刷新一次，全部完成后停止 ──
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startPolling() {
+  if (pollTimer) return
+  pollTimer = setInterval(async () => {
+    if (offlineMode.value) return
+    await loadTasks()
+    if (!rows.value.some((r) => r.status === 'running')) {
+      stopPolling()
+    }
+  }, 3000)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+watch(
+  () => rows.value.some((r) => r.status === 'running'),
+  (hasRunning) => {
+    hasRunning ? startPolling() : stopPolling()
+  }
+)
+
 watch(
   () => route.query.create,
   (value) => {
@@ -449,6 +477,7 @@ watch(
 )
 
 onMounted(loadTasks)
+onUnmounted(stopPolling)
 </script>
 
 <style scoped lang="scss">
