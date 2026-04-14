@@ -1,398 +1,744 @@
 package com.rpa.management.config;
 
-import com.rpa.management.common.enums.ExecuteType;
-import com.rpa.management.common.enums.PermissionStatus;
-import com.rpa.management.common.enums.PermissionType;
-import com.rpa.management.common.enums.RobotStatus;
-import com.rpa.management.common.enums.RoleStatus;
-import com.rpa.management.common.enums.TaskPriority;
-import com.rpa.management.common.enums.TaskStatus;
-import com.rpa.management.common.enums.UserStatus;
-import com.rpa.management.entity.Permission;
-import com.rpa.management.entity.Role;
-import com.rpa.management.entity.RolePermission;
-import com.rpa.management.entity.ExecutionLog;
-import com.rpa.management.entity.Robot;
-import com.rpa.management.entity.OperationLog;
-import com.rpa.management.entity.Task;
-import com.rpa.management.entity.User;
-import com.rpa.management.entity.SystemSetting;
-import com.rpa.management.repository.PermissionRepository;
-import com.rpa.management.repository.RolePermissionRepository;
-import com.rpa.management.repository.RoleRepository;
-import com.rpa.management.repository.ExecutionLogRepository;
-import com.rpa.management.repository.OperationLogRepository;
-import com.rpa.management.repository.RobotRepository;
-import com.rpa.management.repository.SystemSettingRepository;
-import com.rpa.management.repository.TaskRepository;
-import com.rpa.management.repository.UserRepository;
+import java.time.LocalDateTime;
+import java.util.List;
+
+import com.rpa.management.entity.*;
+import com.rpa.management.repository.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
+/**
+ * 数据初始化组件
+ * 应用启动时自动创建管理员账号和默认角色
+ */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
 
+    private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
-    private final RolePermissionRepository rolePermissionRepository;
-    private final UserRepository userRepository;
-    private final TaskRepository taskRepository;
     private final RobotRepository robotRepository;
-    private final ExecutionLogRepository executionLogRepository;
-    private final OperationLogRepository operationLogRepository;
-    private final SystemSettingRepository systemSettingRepository;
+    private final NodeTypeRepository nodeTypeRepository;
+    private final WorkflowRepository workflowRepository;
+    private final WorkflowNodeRepository workflowNodeRepository;
+    private final CollectConfigRepository collectConfigRepository;
+    private final CollectDataRepository collectDataRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
     @Transactional
     public void run(String... args) {
-        Map<String, Permission> permissionMap = seedPermissions();
-        Role adminRole = seedAdminRole(permissionMap);
-        Role operatorRole = seedOperatorRole(permissionMap);
-        seedUsers(adminRole, operatorRole);
-        seedRobots();
-        seedTasks();
-        seedExecutionLogs();
-        seedOperationLogs();
-        seedSettings();
+        log.info("========== 开始初始化数据 ==========");
+
+        // 初始化默认角色
+        initRoles();
+
+        // 为管理员角色分配所有权限
+        assignAdminPermissions();
+
+        // 初始化管理员账号
+        initAdminUser();
+
+        // 初始化测试用户
+        initTestUsers();
+
+        // 初始化测试机器人
+        initTestRobots();
+
+        // 初始化节点类型
+        initNodeTypes();
+
+        // 初始化工作流
+        initWorkflows();
+
+        // 初始化工作流节点
+        initWorkflowNodes();
+
+        // 初始化采集任务配置
+        initCollectConfigs();
+
+        // 初始化采集数据
+        initCollectData();
+
+        log.info("========== 数据初始化完成 ==========");
     }
 
-    private Map<String, Permission> seedPermissions() {
-        Map<String, Permission> permissionMap = new LinkedHashMap<>();
-        if (!permissionRepository.existsByCode("dashboard:view")) {
-            savePermission(permissionMap, "dashboard:view", "仪表盘", PermissionType.MENU, null, "/dashboard", "Dashboard", "HomeFilled", 1);
-            savePermission(permissionMap, "system:view", "系统管理", PermissionType.MENU, null, "/system", "Layout", "Setting", 2);
-            savePermission(permissionMap, "system:user:view", "用户管理", PermissionType.MENU, "system:view", "/system/users", "system/user/index", "User", 1);
-            savePermission(permissionMap, "system:user:create", "新增用户", PermissionType.BUTTON, "system:user:view", null, null, null, 1);
-            savePermission(permissionMap, "system:user:update", "编辑用户", PermissionType.BUTTON, "system:user:view", null, null, null, 2);
-            savePermission(permissionMap, "system:user:delete", "删除用户", PermissionType.BUTTON, "system:user:view", null, null, null, 3);
-            savePermission(permissionMap, "system:user:status", "启停用户", PermissionType.BUTTON, "system:user:view", null, null, null, 4);
-            savePermission(permissionMap, "system:user:reset-password", "重置密码", PermissionType.BUTTON, "system:user:view", null, null, null, 5);
-            savePermission(permissionMap, "system:user:assign-scope", "权限范围", PermissionType.BUTTON, "system:user:view", null, null, null, 6);
-
-            savePermission(permissionMap, "system:role:view", "角色管理", PermissionType.MENU, "system:view", "/system/roles", "system/role/index", "UserFilled", 2);
-            savePermission(permissionMap, "system:role:create", "新增角色", PermissionType.BUTTON, "system:role:view", null, null, null, 1);
-            savePermission(permissionMap, "system:role:update", "编辑角色", PermissionType.BUTTON, "system:role:view", null, null, null, 2);
-            savePermission(permissionMap, "system:role:delete", "删除角色", PermissionType.BUTTON, "system:role:view", null, null, null, 3);
-            savePermission(permissionMap, "system:role:assign-permissions", "分配权限", PermissionType.BUTTON, "system:role:view", null, null, null, 4);
-
-            savePermission(permissionMap, "system:permission:view", "权限管理", PermissionType.MENU, "system:view", "/system/permissions", "system/permission/index", "Lock", 3);
-            savePermission(permissionMap, "system:permission:create", "新增权限", PermissionType.BUTTON, "system:permission:view", null, null, null, 1);
-            savePermission(permissionMap, "system:permission:update", "编辑权限", PermissionType.BUTTON, "system:permission:view", null, null, null, 2);
-            savePermission(permissionMap, "system:permission:status", "启停权限", PermissionType.BUTTON, "system:permission:view", null, null, null, 3);
-            savePermission(permissionMap, "system:permission:delete", "删除权限", PermissionType.BUTTON, "system:permission:view", null, null, null, 4);
-
-            savePermission(permissionMap, "task:view", "任务管理", PermissionType.MENU, null, "/tasks", "task/index", "List", 3);
-            savePermission(permissionMap, "task:create", "创建任务", PermissionType.BUTTON, "task:view", null, null, null, 1);
-            savePermission(permissionMap, "task:update", "编辑任务", PermissionType.BUTTON, "task:view", null, null, null, 2);
-            savePermission(permissionMap, "task:delete", "删除任务", PermissionType.BUTTON, "task:view", null, null, null, 3);
-            savePermission(permissionMap, "task:start", "启动任务", PermissionType.BUTTON, "task:view", null, null, null, 4);
-            savePermission(permissionMap, "task:stop", "停止任务", PermissionType.BUTTON, "task:view", null, null, null, 5);
-
-            savePermission(permissionMap, "robot:view", "机器人管理", PermissionType.MENU, null, "/robots", "robot/index", "Cpu", 4);
-            savePermission(permissionMap, "robot:create", "新增机器人", PermissionType.BUTTON, "robot:view", null, null, null, 1);
-            savePermission(permissionMap, "robot:update", "编辑机器人", PermissionType.BUTTON, "robot:view", null, null, null, 2);
-            savePermission(permissionMap, "robot:delete", "删除机器人", PermissionType.BUTTON, "robot:view", null, null, null, 3);
-            savePermission(permissionMap, "robot:start", "启动机器人", PermissionType.BUTTON, "robot:view", null, null, null, 4);
-            savePermission(permissionMap, "robot:stop", "停止机器人", PermissionType.BUTTON, "robot:view", null, null, null, 5);
-
-            savePermission(permissionMap, "workflow:view", "流程定义与设计", PermissionType.MENU, null, "/workflow", "workflow/index", "Share", 5);
-            savePermission(permissionMap, "workflow:design", "流程设计", PermissionType.MENU, "workflow:view", "/workflow/design", "workflow/design", "Edit", 1);
-
-            savePermission(permissionMap, "monitor:view", "执行监控与记录", PermissionType.MENU, null, "/monitor", "monitor/index", "Monitor", 6);
-            savePermission(permissionMap, "monitor:log", "执行日志", PermissionType.MENU, "monitor:view", "/monitor/logs", "monitor/logs", "Document", 1);
-
-            savePermission(permissionMap, "statistics:view", "数据查询与统计", PermissionType.MENU, null, "/statistics", "statistics/index", "DataAnalysis", 7);
-            savePermission(permissionMap, "statistics:query", "数据查询", PermissionType.MENU, "statistics:view", "/statistics/query", "statistics/query", "Search", 1);
-
-            savePermission(permissionMap, "settings:view", "系统设置", PermissionType.MENU, null, "/settings", "settings/index", "Tools", 8);
-            savePermission(permissionMap, "settings:basic", "基础设置", PermissionType.MENU, "settings:view", "/settings/basic", "settings/basic", "Setting", 1);
-            savePermission(permissionMap, "settings:notification", "通知设置", PermissionType.MENU, "settings:view", "/settings/notification", "settings/notification", "Bell", 2);
-        } else {
-            for (Permission permission : permissionRepository.findAll()) {
-                permissionMap.put(permission.getCode(), permission);
-            }
-        }
-        return permissionMap;
-    }
-
-    private void savePermission(Map<String, Permission> permissionMap,
-                                String code,
-                                String name,
-                                PermissionType type,
-                                String parentCode,
-                                String path,
-                                String component,
-                                String icon,
-                                int sortOrder) {
-        if (permissionMap.containsKey(code)) {
-            return;
-        }
-        Permission permission = new Permission()
-            .setCode(code)
-            .setName(name)
-            .setType(type)
-            .setParentId(parentCode == null ? null : permissionMap.get(parentCode).getId())
-            .setPath(path)
-            .setComponent(component)
-            .setIcon(icon)
-            .setSortOrder(sortOrder)
-            .setStatus(PermissionStatus.ACTIVE);
-        permission = permissionRepository.save(permission);
-        permissionMap.put(code, permission);
-    }
-
-    private Role seedAdminRole(Map<String, Permission> permissionMap) {
-        Role role = roleRepository.findByCode("ADMIN").orElseGet(() -> roleRepository.save(new Role()
-            .setName("管理员")
-            .setCode("ADMIN")
-            .setDescription("系统固定超级管理员")
-            .setStatus(RoleStatus.ACTIVE)
-            .setBuiltIn(true)));
-        rolePermissionRepository.deleteAllByRoleId(role.getId());
-        for (Permission permission : permissionMap.values()) {
-            rolePermissionRepository.save(RolePermission.of(role.getId(), permission.getId()));
-        }
-        return role;
-    }
-
-    private Role seedOperatorRole(Map<String, Permission> permissionMap) {
-        Role role = roleRepository.findByCode("OPERATOR").orElseGet(() -> roleRepository.save(new Role()
-            .setName("运营人员")
-            .setCode("OPERATOR")
-            .setDescription("普通业务角色")
-            .setStatus(RoleStatus.ACTIVE)
-            .setBuiltIn(false)));
-        rolePermissionRepository.deleteAllByRoleId(role.getId());
-        List<String> codes = List.of(
-            "dashboard:view",
-            "task:view",
-            "task:create",
-            "task:update",
-            "task:start",
-            "task:stop",
-            "robot:view",
-            "robot:start",
-            "robot:stop",
-            "workflow:view",
-            "monitor:view",
-            "statistics:view",
-            "settings:view"
-        );
-        for (String code : codes) {
-            Permission permission = permissionMap.get(code);
-            if (permission != null) {
-                rolePermissionRepository.save(RolePermission.of(role.getId(), permission.getId()));
-            }
-        }
-        return role;
-    }
-
-    private void seedUsers(Role adminRole, Role operatorRole) {
-        if (!userRepository.existsByUsername("admin")) {
-            userRepository.save(new User()
-                .setUsername("admin")
-                .setPassword(passwordEncoder.encode("admin123"))
-                .setRealName("系统管理员")
-                .setEmail("admin@example.com")
-                .setPhone("13800138000")
-                .setRoleId(adminRole.getId())
-                .setStatus(UserStatus.ACTIVE)
-                .setSuperAdmin(true)
-                .setLastLoginAt(LocalDateTime.now().minusDays(1))
-                .setLastLoginIp("127.0.0.1"));
-        }
-        if (!userRepository.existsByUsername("user01")) {
-            userRepository.save(new User()
-                .setUsername("user01")
-                .setPassword(passwordEncoder.encode("user123"))
-                .setRealName("张三")
-                .setEmail("zhangsan@example.com")
-                .setPhone("13900139001")
-                .setRoleId(operatorRole.getId())
-                .setStatus(UserStatus.ACTIVE)
-                .setSuperAdmin(false));
-        }
-        if (!userRepository.existsByUsername("user02")) {
-            userRepository.save(new User()
-                .setUsername("user02")
-                .setPassword(passwordEncoder.encode("user123"))
-                .setRealName("李四")
-                .setEmail("lisi@example.com")
-                .setPhone("13900139002")
-                .setRoleId(operatorRole.getId())
-                .setStatus(UserStatus.ACTIVE)
-                .setSuperAdmin(false));
-        }
-    }
-
-    private void seedRobots() {
+    /**
+     * 初始化测试机器人
+     */
+    private void initTestRobots() {
+        // 检查是否已有机器人数据
         if (robotRepository.count() > 0) {
+            log.info("✅ 机器人数据已存在，跳过初始化");
             return;
         }
-        robotRepository.save(new Robot()
-            .setName("Robot-01")
-            .setType("数据采集")
-            .setStatus(RobotStatus.ONLINE)
-            .setIpAddress("192.168.1.101")
-            .setPort(8080)
-            .setTaskCount(128)
-            .setSuccessRate(new BigDecimal("98.00"))
-            .setLastHeartbeat(LocalDateTime.now().minusMinutes(5)));
-        robotRepository.save(new Robot()
-            .setName("Robot-02")
-            .setType("报表生成")
-            .setStatus(RobotStatus.ONLINE)
-            .setIpAddress("192.168.1.102")
-            .setPort(8080)
-            .setTaskCount(85)
-            .setSuccessRate(new BigDecimal("100.00"))
-            .setLastHeartbeat(LocalDateTime.now().minusMinutes(10)));
-        robotRepository.save(new Robot()
-            .setName("Robot-03")
-            .setType("文件处理")
-            .setStatus(RobotStatus.OFFLINE)
-            .setIpAddress("192.168.1.103")
-            .setPort(8080)
-            .setTaskCount(42)
-            .setSuccessRate(new BigDecimal("95.00"))
-            .setLastHeartbeat(LocalDateTime.now().minusHours(2)));
+
+        // 插入测试机器人数据
+        Robot robot1 = new Robot();
+        robot1.setRobotCode("DC-001");
+        robot1.setName("数据采集机器人-1");
+        robot1.setType("data_collector");
+        robot1.setDescription("自动采集网站数据");
+        robot1.setStatus("online");
+        robot1.setTotalTasks(128L);
+        robot1.setSuccessTasks(125L);
+        robot1.setFailedTasks(3L);
+        robot1.setSuccessRate(97.66);
+        robotRepository.save(robot1);
+
+        Robot robot2 = new Robot();
+        robot2.setRobotCode("RG-001");
+        robot2.setName("报表生成机器人-1");
+        robot2.setType("report_generator");
+        robot2.setDescription("自动生成业务报表");
+        robot2.setStatus("online");
+        robot2.setTotalTasks(85L);
+        robot2.setSuccessTasks(85L);
+        robot2.setFailedTasks(0L);
+        robot2.setSuccessRate(100.0);
+        robotRepository.save(robot2);
+
+        Robot robot3 = new Robot();
+        robot3.setRobotCode("TS-001");
+        robot3.setName("任务调度机器人-1");
+        robot3.setType("task_scheduler");
+        robot3.setDescription("定时任务调度管理");
+        robot3.setStatus("offline");
+        robot3.setTotalTasks(42L);
+        robot3.setSuccessTasks(40L);
+        robot3.setFailedTasks(2L);
+        robot3.setSuccessRate(95.24);
+        robotRepository.save(robot3);
+
+        Robot robot4 = new Robot();
+        robot4.setRobotCode("NT-001");
+        robot4.setName("消息通知机器人-1");
+        robot4.setType("notification");
+        robot4.setDescription("发送消息通知");
+        robot4.setStatus("offline");
+        robot4.setTotalTasks(0L);
+        robot4.setSuccessTasks(0L);
+        robot4.setFailedTasks(0L);
+        robot4.setSuccessRate(0.0);
+        robotRepository.save(robot4);
+
+        Robot robot5 = new Robot();
+        robot5.setRobotCode("FP-001");
+        robot5.setName("文件处理机器人-1");
+        robot5.setType("file_processor");
+        robot5.setDescription("处理文件转换");
+        robot5.setStatus("online");
+        robot5.setTotalTasks(56L);
+        robot5.setSuccessTasks(54L);
+        robot5.setFailedTasks(2L);
+        robot5.setSuccessRate(96.43);
+        robotRepository.save(robot5);
+
+        log.info("✅ 机器人测试数据初始化完成，共插入 {} 条", robotRepository.count());
     }
 
-    private void seedTasks() {
-        if (taskRepository.count() > 0) {
+    /**
+     * 修复数据库中角色字段值（小写转大写）
+     */
+    private void fixRoleData() {
+        // 使用原生SQL更新角色值
+        userRepository.updateRoleToUppercase();
+        log.info("✅ 角色数据修复完成");
+    }
+
+    /**
+     * 为管理员角色分配所有权限
+     */
+    private void assignAdminPermissions() {
+        Role adminRole = roleRepository.findByCode("ADMIN").orElse(null);
+        if (adminRole == null) {
+            log.warn("⚠️ 管理员角色不存在，跳过权限分配");
             return;
         }
-        LocalDateTime now = LocalDateTime.now();
-        saveTask("T001", "数据采集任务A", "数据采集", TaskStatus.RUNNING, 75, TaskPriority.HIGH, ExecuteType.IMMEDIATE, 1L, 1L, now.minusDays(6));
-        saveTask("T002", "报表生成任务B", "报表生成", TaskStatus.COMPLETED, 100, TaskPriority.MEDIUM, ExecuteType.IMMEDIATE, 2L, 1L, now.minusDays(4));
-        saveTask("T003", "文件处理任务C", "文件处理", TaskStatus.PENDING, 0, TaskPriority.LOW, ExecuteType.SCHEDULED, null, 2L, now.minusDays(2));
-        saveTask("T004", "数据同步任务D", "数据同步", TaskStatus.FAILED, 45, TaskPriority.HIGH, ExecuteType.IMMEDIATE, 1L, 2L, now.minusDays(1));
-    }
 
-    private void saveTask(String taskNo,
-                          String name,
-                          String type,
-                          TaskStatus status,
-                          int progress,
-                          TaskPriority priority,
-                          ExecuteType executeType,
-                          Long robotId,
-                          Long createdByUserId,
-                          LocalDateTime createdAt) {
-        Task task = new Task()
-            .setTaskNo(taskNo)
-            .setName(name)
-            .setType(type)
-            .setStatus(status)
-            .setProgress(progress)
-            .setPriority(priority)
-            .setExecuteType(executeType)
-            .setRobotId(robotId)
-            .setCreatedByUserId(createdByUserId)
-            .setStartTime(status == TaskStatus.RUNNING ? createdAt.plusHours(1) : null)
-            .setEndTime(status == TaskStatus.COMPLETED || status == TaskStatus.FAILED ? createdAt.plusHours(2) : null)
-            .setDuration(status == TaskStatus.RUNNING ? 3600 : 1800);
-        task.setCreatedAt(createdAt);
-        task.setUpdatedAt(createdAt);
-        taskRepository.save(task);
-    }
-
-    private void seedExecutionLogs() {
-        if (executionLogRepository.count() > 0) {
+        // 获取所有权限
+        List<Permission> allPermissions = permissionRepository.findAll();
+        if (allPermissions.isEmpty()) {
+            log.info("✅ 权限表为空，跳过权限分配");
             return;
         }
-        saveExecutionLog(1L, 1L, "INFO", "任务已进入执行队列", LocalDateTime.now().minusHours(6));
-        saveExecutionLog(1L, 1L, "WARN", "执行节点发生一次重试", LocalDateTime.now().minusHours(5));
-        saveExecutionLog(2L, 2L, "INFO", "任务执行完成", LocalDateTime.now().minusHours(4));
-        saveExecutionLog(4L, 1L, "ERROR", "任务执行失败，等待人工处理", LocalDateTime.now().minusHours(2));
-    }
 
-    private void saveExecutionLog(Long taskId, Long robotId, String level, String message, LocalDateTime createdAt) {
-        ExecutionLog log = new ExecutionLog()
-            .setTaskId(taskId)
-            .setRobotId(robotId)
-            .setLevel(level)
-            .setMessage(message);
-        log.setCreatedAt(createdAt);
-        log.setUpdatedAt(createdAt);
-        executionLogRepository.save(log);
-    }
-
-    private void seedOperationLogs() {
-        if (operationLogRepository.count() > 0) {
+        // 如果角色已有权限且数量一致，不重复分配
+        if (adminRole.getPermissions() != null && adminRole.getPermissions().size() >= allPermissions.size()) {
+            log.info("✅ 管理员角色已有权限，跳过分配");
             return;
         }
-        saveOperationLog(1L, "admin", "登录系统", "POST /api/auth/login", "{\"username\":\"admin\"}", "127.0.0.1", "SUCCESS", null, 120L, LocalDateTime.now().minusHours(8));
-        saveOperationLog(1L, "admin", "创建任务", "POST /api/tasks", "{\"taskNo\":\"T005\"}", "127.0.0.1", "SUCCESS", null, 240L, LocalDateTime.now().minusHours(7));
-        saveOperationLog(2L, "user01", "查看监控", "GET /api/monitor/realtime", "{}", "127.0.0.1", "SUCCESS", null, 60L, LocalDateTime.now().minusHours(3));
-        saveOperationLog(1L, "admin", "调整角色权限", "PUT /api/roles/1/permissions", "{\"permissionIds\":[1,2,3]}", "127.0.0.1", "SUCCESS", null, 180L, LocalDateTime.now().minusHours(2));
+
+        // 为管理员角色分配所有权限（List转Set）
+        if (adminRole.getPermissions() == null) {
+            adminRole.setPermissions(new java.util.HashSet<>());
+        }
+        adminRole.getPermissions().addAll(allPermissions);
+        roleRepository.save(adminRole);
+        log.info("✅ 已为管理员角色分配所有权限，共 {} 个", allPermissions.size());
     }
 
-    private void saveOperationLog(Long userId,
-                                  String username,
-                                  String operation,
-                                  String method,
-                                  String params,
-                                  String ip,
-                                  String status,
-                                  String errorMsg,
-                                  Long duration,
-                                  LocalDateTime createdAt) {
-        OperationLog log = new OperationLog()
-            .setUserId(userId)
-            .setUsername(username)
-            .setOperation(operation)
-            .setMethod(method)
-            .setParams(params)
-            .setIp(ip)
-            .setStatus(status)
-            .setErrorMsg(errorMsg)
-            .setDuration(duration);
-        log.setCreatedAt(createdAt);
-        log.setUpdatedAt(createdAt);
-        operationLogRepository.save(log);
+    /**
+     * 初始化默认角色
+     */
+    private void initRoles() {
+        // 管理员角色
+        if (!roleRepository.existsByCode("ADMIN")) {
+            Role adminRole = new Role();
+            adminRole.setName("管理员");
+            adminRole.setCode("ADMIN");
+            adminRole.setDescription("系统管理员，拥有所有权限");
+            adminRole.setStatus("active");
+            adminRole.setSortOrder(1);
+            roleRepository.save(adminRole);
+            log.info("✅ 管理员角色创建成功");
+        }
+
+        // 普通用户角色
+        if (!roleRepository.existsByCode("USER")) {
+            Role userRole = new Role();
+            userRole.setName("普通用户");
+            userRole.setCode("USER");
+            userRole.setDescription("普通用户，拥有只读权限，可查看系统仪表盘、任务执行记录、采集数据等");
+            userRole.setStatus("active");
+            userRole.setSortOrder(2);
+            roleRepository.save(userRole);
+            log.info("✅ 普通用户角色创建成功");
+        }
+
+        // 访客角色
+        if (!roleRepository.existsByCode("GUEST")) {
+            Role guestRole = new Role();
+            guestRole.setName("访客");
+            guestRole.setCode("GUEST");
+            guestRole.setDescription("访客用户，只有基本查看权限");
+            guestRole.setStatus("active");
+            guestRole.setSortOrder(3);
+            roleRepository.save(guestRole);
+            log.info("✅ 访客角色创建成功");
+        }
     }
 
-    private void seedSettings() {
-        if (systemSettingRepository.count() > 0) {
+    /**
+     * 初始化管理员账号
+     */
+    private void initAdminUser() {
+        if (!userRepository.existsByUsername("admin")) {
+            User admin = new User();
+            admin.setUsername("admin");
+            admin.setPassword(passwordEncoder.encode("admin123"));
+            admin.setRealName("系统管理员");
+            admin.setEmail("admin@example.com");
+            admin.setPhone("13800138000");
+            admin.setRole(UserRole.ADMIN);
+            admin.setStatus("active");
+
+            userRepository.save(admin);
+            log.info("✅ 管理员账号创建成功: admin / admin123");
+        } else {
+            log.info("✅ 管理员账号已存在，跳过创建");
+        }
+    }
+
+    /**
+     * 初始化测试用户
+     */
+    private void initTestUsers() {
+        // 创建测试用户 user01
+        if (!userRepository.existsByUsername("user01")) {
+            User user01 = new User();
+            user01.setUsername("user01");
+            user01.setPassword(passwordEncoder.encode("user123"));
+            user01.setRealName("张三");
+            user01.setEmail("zhangsan@example.com");
+            user01.setPhone("13900139001");
+            user01.setRole(UserRole.USER);
+            user01.setStatus("active");
+
+            userRepository.save(user01);
+            log.info("✅ 测试用户创建成功: user01 / user123");
+        }
+
+        // 创建测试用户 user02
+        if (!userRepository.existsByUsername("user02")) {
+            User user02 = new User();
+            user02.setUsername("user02");
+            user02.setPassword(passwordEncoder.encode("user123"));
+            user02.setRealName("李四");
+            user02.setEmail("lisi@example.com");
+            user02.setPhone("13900139002");
+            user02.setRole(UserRole.USER);
+            user02.setStatus("active");
+
+            userRepository.save(user02);
+            log.info("✅ 测试用户创建成功: user02 / user123");
+        }
+    }
+
+    /**
+     * 初始化节点类型
+     */
+    private void initNodeTypes() {
+        if (nodeTypeRepository.count() > 0) {
+            log.info("✅ 节点类型已存在，跳过初始化");
             return;
         }
-        saveSetting("basic", "systemName", "RPA 管理系统", "基础设置 - systemName");
-        saveSetting("basic", "systemSubtitle", "自动化任务与执行监控平台", "基础设置 - systemSubtitle");
-        saveSetting("basic", "companyName", "RPA Platform", "基础设置 - companyName");
-        saveSetting("basic", "supportEmail", "support@example.com", "基础设置 - supportEmail");
-        saveSetting("basic", "supportPhone", "400-000-0000", "基础设置 - supportPhone");
-        saveSetting("basic", "loginNotice", "请使用授权账号登录系统", "基础设置 - loginNotice");
-        saveSetting("basic", "maintenanceMode", "false", "基础设置 - maintenanceMode");
 
-        saveSetting("notification", "emailEnabled", "false", "通知设置 - emailEnabled");
-        saveSetting("notification", "emailHost", "", "通知设置 - emailHost");
-        saveSetting("notification", "emailPort", "587", "通知设置 - emailPort");
-        saveSetting("notification", "emailUsername", "", "通知设置 - emailUsername");
-        saveSetting("notification", "emailFrom", "noreply@example.com", "通知设置 - emailFrom");
-        saveSetting("notification", "webhookEnabled", "false", "通知设置 - webhookEnabled");
-        saveSetting("notification", "webhookUrl", "", "通知设置 - webhookUrl");
-        saveSetting("notification", "taskFailureAlert", "true", "通知设置 - taskFailureAlert");
-        saveSetting("notification", "robotOfflineAlert", "true", "通知设置 - robotOfflineAlert");
+        NodeType startNode = new NodeType();
+        startNode.setType("start");
+        startNode.setName("开始");
+        startNode.setIcon("VideoPlay");
+        startNode.setColor("#67C23A");
+        startNode.setCategory("基础");
+        startNode.setSortOrder(1);
+        startNode.setDescription("流程开始节点");
+        nodeTypeRepository.save(startNode);
+
+        NodeType endNode = new NodeType();
+        endNode.setType("end");
+        endNode.setName("结束");
+        endNode.setIcon("VideoPause");
+        endNode.setColor("#F56C6C");
+        endNode.setCategory("基础");
+        endNode.setSortOrder(2);
+        endNode.setDescription("流程结束节点");
+        nodeTypeRepository.save(endNode);
+
+        NodeType httpNode = new NodeType();
+        httpNode.setType("http");
+        httpNode.setName("HTTP请求");
+        httpNode.setIcon("Connection");
+        httpNode.setColor("#409EFF");
+        httpNode.setCategory("机器人");
+        httpNode.setSortOrder(3);
+        httpNode.setDescription("发送HTTP请求");
+        nodeTypeRepository.save(httpNode);
+
+        NodeType dataProcessNode = new NodeType();
+        dataProcessNode.setType("data_process");
+        dataProcessNode.setName("数据处理");
+        dataProcessNode.setIcon("DataAnalysis");
+        dataProcessNode.setColor("#E6A23C");
+        dataProcessNode.setCategory("机器人");
+        dataProcessNode.setSortOrder(4);
+        dataProcessNode.setDescription("数据清洗和转换");
+        nodeTypeRepository.save(dataProcessNode);
+
+        NodeType conditionNode = new NodeType();
+        conditionNode.setType("condition");
+        conditionNode.setName("条件判断");
+        conditionNode.setIcon("MostlyCreativeOpposite");
+        conditionNode.setColor("#909399");
+        conditionNode.setCategory("逻辑");
+        conditionNode.setSortOrder(5);
+        conditionNode.setDescription("根据条件分支执行");
+        nodeTypeRepository.save(conditionNode);
+
+        NodeType delayNode = new NodeType();
+        delayNode.setType("delay");
+        delayNode.setName("延时等待");
+        delayNode.setIcon("Timer");
+        delayNode.setColor("#9ACD32");
+        delayNode.setCategory("逻辑");
+        delayNode.setSortOrder(6);
+        delayNode.setDescription("延时等待指定时间");
+        nodeTypeRepository.save(delayNode);
+
+        NodeType emailNode = new NodeType();
+        emailNode.setType("email");
+        emailNode.setName("邮件发送");
+        emailNode.setIcon("Message");
+        emailNode.setColor("#FF69B4");
+        emailNode.setCategory("机器人");
+        emailNode.setSortOrder(7);
+        emailNode.setDescription("发送邮件通知");
+        nodeTypeRepository.save(emailNode);
+
+        log.info("✅ 节点类型初始化完成");
     }
 
-    private void saveSetting(String group, String key, String value, String description) {
-        SystemSetting setting = new SystemSetting()
-            .setSettingGroup(group)
-            .setSettingKey(key)
-            .setSettingValue(value)
-            .setDescription(description);
-        systemSettingRepository.save(setting);
+    /**
+     * 初始化工作流
+     */
+    private void initWorkflows() {
+        if (workflowRepository.count() > 0) {
+            log.info("✅ 工作流已存在，跳过初始化");
+            return;
+        }
+
+        // 工作流1：数据采集自动处理流程
+        Workflow wf1 = new Workflow();
+        wf1.setWorkflowCode("WF-DATA-001");
+        wf1.setName("数据采集自动处理流程");
+        wf1.setDescription("自动采集网页数据并进行清洗处理，发送邮件通知");
+        wf1.setStatus("published");
+        wf1.setVersion(1);
+        wf1.setUserId(1L);
+        wf1.setUserName("admin");
+        wf1.setPublishTime(LocalDateTime.now());
+        wf1.setConfig("{\"nodes\":[],\"edges\":[]}");
+        workflowRepository.save(wf1);
+
+        // 工作流2：报表自动生成流程
+        Workflow wf2 = new Workflow();
+        wf2.setWorkflowCode("WF-REPORT-001");
+        wf2.setName("报表自动生成流程");
+        wf2.setDescription("定时生成业务报表，发送给相关人员");
+        wf2.setStatus("published");
+        wf2.setVersion(1);
+        wf2.setUserId(1L);
+        wf2.setUserName("admin");
+        wf2.setPublishTime(LocalDateTime.now());
+        wf2.setConfig("{\"nodes\":[],\"edges\":[]}");
+        workflowRepository.save(wf2);
+
+        // 工作流3：任务审批流程（草稿状态）
+        Workflow wf3 = new Workflow();
+        wf3.setWorkflowCode("WF-APPROVAL-001");
+        wf3.setName("任务审批流程");
+        wf3.setDescription("自动化任务审批流程");
+        wf3.setStatus("draft");
+        wf3.setVersion(1);
+        wf3.setUserId(1L);
+        wf3.setUserName("admin");
+        wf3.setConfig("{\"nodes\":[],\"edges\":[]}");
+        workflowRepository.save(wf3);
+
+        // 工作流4：异常告警处理流程
+        Workflow wf4 = new Workflow();
+        wf4.setWorkflowCode("WF-ALERT-001");
+        wf4.setName("异常告警处理流程");
+        wf4.setDescription("监控系统异常并自动告警处理");
+        wf4.setStatus("published");
+        wf4.setVersion(2);
+        wf4.setUserId(1L);
+        wf4.setUserName("admin");
+        wf4.setPublishTime(LocalDateTime.now());
+        wf4.setConfig("{\"nodes\":[],\"edges\":[]}");
+        workflowRepository.save(wf4);
+
+        log.info("✅ 工作流初始化完成，共 {} 条", workflowRepository.count());
+    }
+
+    /**
+     * 初始化工作流节点
+     */
+    private void initWorkflowNodes() {
+        if (workflowNodeRepository.count() > 0) {
+            log.info("✅ 工作流节点已存在，跳过初始化");
+            return;
+        }
+
+        List<Workflow> workflows = workflowRepository.findAll();
+
+        // 为工作流1添加节点
+        Workflow wf1 = workflows.stream().filter(w -> "WF-DATA-001".equals(w.getWorkflowCode())).findFirst().orElse(null);
+        if (wf1 != null) {
+            WorkflowNode node1 = new WorkflowNode();
+            node1.setWorkflowId(wf1.getId());
+            node1.setNodeType("start");
+            node1.setName("开始采集");
+            node1.setDescription("开始数据采集流程");
+            node1.setX(100);
+            node1.setY(200);
+            node1.setOrder(1);
+            workflowNodeRepository.save(node1);
+
+            WorkflowNode node2 = new WorkflowNode();
+            node2.setWorkflowId(wf1.getId());
+            node2.setNodeType("http");
+            node2.setName("获取数据");
+            node2.setDescription("从目标网站获取数据");
+            node2.setX(300);
+            node2.setY(200);
+            node2.setOrder(2);
+            node2.setTimeout(60);
+            node2.setConfig("{\"url\":\"https://api.example.com/data\",\"method\":\"GET\"}");
+            workflowNodeRepository.save(node2);
+
+            WorkflowNode node3 = new WorkflowNode();
+            node3.setWorkflowId(wf1.getId());
+            node3.setNodeType("condition");
+            node3.setName("判断状态");
+            node3.setDescription("判断数据获取是否成功");
+            node3.setX(500);
+            node3.setY(200);
+            node3.setOrder(3);
+            workflowNodeRepository.save(node3);
+
+            WorkflowNode node4 = new WorkflowNode();
+            node4.setWorkflowId(wf1.getId());
+            node4.setNodeType("data_process");
+            node4.setName("数据清洗");
+            node4.setDescription("清洗和转换数据格式");
+            node4.setX(700);
+            node4.setY(150);
+            node4.setOrder(4);
+            workflowNodeRepository.save(node4);
+
+            WorkflowNode node5 = new WorkflowNode();
+            node5.setWorkflowId(wf1.getId());
+            node5.setNodeType("email");
+            node5.setName("发送通知");
+            node5.setDescription("发送采集完成通知");
+            node5.setX(700);
+            node5.setY(250);
+            node5.setOrder(5);
+            workflowNodeRepository.save(node5);
+
+            WorkflowNode node6 = new WorkflowNode();
+            node6.setWorkflowId(wf1.getId());
+            node6.setNodeType("end");
+            node6.setName("流程结束");
+            node6.setDescription("流程执行完成");
+            node6.setX(900);
+            node6.setY(200);
+            node6.setOrder(6);
+            workflowNodeRepository.save(node6);
+        }
+
+        // 为工作流2添加节点
+        Workflow wf2 = workflows.stream().filter(w -> "WF-REPORT-001".equals(w.getWorkflowCode())).findFirst().orElse(null);
+        if (wf2 != null) {
+            WorkflowNode node1 = new WorkflowNode();
+            node1.setWorkflowId(wf2.getId());
+            node1.setNodeType("start");
+            node1.setName("开始生成");
+            node1.setX(100);
+            node1.setY(200);
+            node1.setOrder(1);
+            workflowNodeRepository.save(node1);
+
+            WorkflowNode node2 = new WorkflowNode();
+            node2.setWorkflowId(wf2.getId());
+            node2.setNodeType("http");
+            node2.setName("查询数据");
+            node2.setDescription("从数据库查询统计数据");
+            node2.setX(300);
+            node2.setY(200);
+            node2.setOrder(2);
+            workflowNodeRepository.save(node2);
+
+            WorkflowNode node3 = new WorkflowNode();
+            node3.setWorkflowId(wf2.getId());
+            node3.setNodeType("data_process");
+            node3.setName("生成报表");
+            node3.setDescription("生成Excel报表文件");
+            node3.setX(500);
+            node3.setY(200);
+            node3.setOrder(3);
+            workflowNodeRepository.save(node3);
+
+            WorkflowNode node4 = new WorkflowNode();
+            node4.setWorkflowId(wf2.getId());
+            node4.setNodeType("email");
+            node4.setName("发送邮件");
+            node4.setDescription("发送报表给相关人员");
+            node4.setX(700);
+            node4.setY(200);
+            node4.setOrder(4);
+            workflowNodeRepository.save(node4);
+
+            WorkflowNode node5 = new WorkflowNode();
+            node5.setWorkflowId(wf2.getId());
+            node5.setNodeType("end");
+            node5.setName("完成");
+            node5.setX(900);
+            node5.setY(200);
+            node5.setOrder(5);
+            workflowNodeRepository.save(node5);
+        }
+
+        log.info("✅ 工作流节点初始化完成");
+    }
+
+    /**
+     * 初始化采集任务配置
+     */
+    private void initCollectConfigs() {
+        if (collectConfigRepository.count() > 0) {
+            log.info("✅ 采集任务配置已存在，跳过初始化");
+            return;
+        }
+
+        // 采集配置1：新闻网站数据采集
+        CollectConfig config1 = new CollectConfig();
+        config1.setName("新闻网站数据采集");
+        config1.setCollectType("web");
+        config1.setTargetUrl("https://news.example.com/api/articles");
+        config1.setRequestMethod("GET");
+        config1.setCollectRules("{\"listSelector\":\".article-item\",\"fields\":[{\"name\":\"title\",\"selector\":\"h3.title\",\"type\":\"text\"},{\"name\":\"summary\",\"selector\":\".summary\",\"type\":\"text\"},{\"name\":\"pubDate\",\"selector\":\".date\",\"type\":\"text\"}]}");
+        config1.setCronExpression("0 0 */6 * * ?");
+        config1.setIsEnabled(true);
+        config1.setTimeout(30000);
+        config1.setRetryCount(3);
+        config1.setTotalCount(156L);
+        config1.setSuccessCount(150L);
+        config1.setFailCount(6L);
+        config1.setLastExecuteTime(LocalDateTime.now().minusHours(2));
+        config1.setLastExecuteStatus("success");
+        config1.setCreateBy(1L);
+        collectConfigRepository.save(config1);
+
+        // 采集配置2：电商价格监控
+        CollectConfig config2 = new CollectConfig();
+        config2.setName("竞品价格监控");
+        config2.setCollectType("web");
+        config2.setTargetUrl("https://shop.example.com/api/products");
+        config2.setRequestMethod("POST");
+        config2.setRequestBody("{\"category\":\"electronics\",\"page\":1}");
+        config2.setCollectRules("{\"listSelector\":\".product-card\",\"fields\":[{\"name\":\"productName\",\"selector\":\".name\",\"type\":\"text\"},{\"name\":\"price\",\"selector\":\".price\",\"type\":\"text\"},{\"name\":\"stock\",\"selector\":\".stock\",\"type\":\"text\"}]}");
+        config2.setPageConfig("{\"type\":\"url_param\",\"paramName\":\"page\",\"startPage\":1,\"endPage\":10}");
+        config2.setCronExpression("0 0 8,12,18 * * ?");
+        config2.setIsEnabled(true);
+        config2.setTimeout(60000);
+        config2.setRetryCount(5);
+        config2.setTotalCount(892L);
+        config2.setSuccessCount(875L);
+        config2.setFailCount(17L);
+        config2.setLastExecuteTime(LocalDateTime.now().minusHours(4));
+        config2.setLastExecuteStatus("success");
+        config2.setCreateBy(1L);
+        collectConfigRepository.save(config2);
+
+        // 采集配置3：社交媒体数据采集
+        CollectConfig config3 = new CollectConfig();
+        config3.setName("社交媒体舆情采集");
+        config3.setCollectType("api");
+        config3.setTargetUrl("https://api.social.com/v2/posts");
+        config3.setRequestMethod("GET");
+        config3.setRequestHeaders("{\"Authorization\":\"Bearer xxx\",\"Content-Type\":\"application/json\"}");
+        config3.setCollectRules("{\"fields\":[{\"name\":\"content\",\"type\":\"text\"},{\"name\":\"likes\",\"type\":\"number\"},{\"name\":\"comments\",\"type\":\"number\"}]}");
+        config3.setCronExpression("0 0 */2 * * ?");
+        config3.setIsEnabled(true);
+        config3.setTimeout(45000);
+        config3.setRetryCount(3);
+        config3.setTotalCount(2341L);
+        config3.setSuccessCount(2300L);
+        config3.setFailCount(41L);
+        config3.setLastExecuteTime(LocalDateTime.now().minusMinutes(30));
+        config3.setLastExecuteStatus("success");
+        config3.setCreateBy(1L);
+        collectConfigRepository.save(config3);
+
+        // 采集配置4：天气数据采集（禁用状态）
+        CollectConfig config4 = new CollectConfig();
+        config4.setName("城市天气数据采集");
+        config4.setCollectType("api");
+        config4.setTargetUrl("https://api.weather.com/v3/wx/news");
+        config4.setRequestMethod("GET");
+        config4.setCollectRules("{\"fields\":[{\"name\":\"city\",\"type\":\"text\"},{\"name\":\"temperature\",\"type\":\"text\"},{\"name\":\"condition\",\"type\":\"text\"}]}");
+        config4.setIsEnabled(false);
+        config4.setTimeout(20000);
+        config4.setRetryCount(2);
+        config4.setTotalCount(500L);
+        config4.setSuccessCount(480L);
+        config4.setFailCount(20L);
+        config4.setLastExecuteTime(LocalDateTime.now().minusDays(3));
+        config4.setLastExecuteStatus("failed");
+        config4.setCreateBy(1L);
+        collectConfigRepository.save(config4);
+
+        // 采集配置5：数据库数据同步
+        CollectConfig config5 = new CollectConfig();
+        config5.setName("业务数据库数据同步");
+        config5.setCollectType("database");
+        config5.setTargetUrl("jdbc:mysql://localhost:3306/business_db");
+        config5.setCollectRules("{\"sql\":\"SELECT * FROM orders WHERE status = 'pending'\",\"fields\":[{\"name\":\"orderId\",\"type\":\"text\"},{\"name\":\"customerName\",\"type\":\"text\"},{\"name\":\"amount\",\"type\":\"number\"}]}");
+        config5.setCronExpression("0 0/30 * * * ?");
+        config5.setIsEnabled(true);
+        config5.setTimeout(120000);
+        config5.setRetryCount(3);
+        config5.setTotalCount(3200L);
+        config5.setSuccessCount(3180L);
+        config5.setFailCount(20L);
+        config5.setLastExecuteTime(LocalDateTime.now().minusMinutes(15));
+        config5.setLastExecuteStatus("success");
+        config5.setCreateBy(1L);
+        collectConfigRepository.save(config5);
+
+        log.info("✅ 采集任务配置初始化完成，共 {} 条", collectConfigRepository.count());
+    }
+
+    /**
+     * 初始化采集数据
+     */
+    private void initCollectData() {
+        if (collectDataRepository.count() > 0) {
+            log.info("✅ 采集数据已存在，跳过初始化");
+            return;
+        }
+
+        List<CollectConfig> configs = collectConfigRepository.findAll();
+
+        // 为配置1添加采集数据
+        CollectConfig cfg1 = configs.stream().filter(c -> "新闻网站数据采集".equals(c.getName())).findFirst().orElse(null);
+        if (cfg1 != null) {
+            for (int i = 1; i <= 5; i++) {
+                CollectData data = new CollectData();
+                data.setConfigId(cfg1.getId());
+                data.setSourceUrl("https://news.example.com/article/" + i);
+                data.setDataHash("hash_news_" + i);
+                data.setDataContent("{\"title\":\"新闻标题" + i + "\",\"summary\":\"这是新闻摘要内容" + i + "\",\"pubDate\":\"2026-04-" + String.format("%02d", i) + "\",\"author\":\"记者张三\"}");
+                data.setStatus("valid");
+                collectDataRepository.save(data);
+            }
+        }
+
+        // 为配置2添加采集数据
+        CollectConfig cfg2 = configs.stream().filter(c -> "竞品价格监控".equals(c.getName())).findFirst().orElse(null);
+        if (cfg2 != null) {
+            String[] products = {"手机", "电脑", "平板", "耳机", "键盘"};
+            for (int i = 0; i < 5; i++) {
+                CollectData data = new CollectData();
+                data.setConfigId(cfg2.getId());
+                data.setSourceUrl("https://shop.example.com/product/" + (i + 1));
+                data.setDataHash("hash_product_" + i);
+                data.setDataContent("{\"productName\":\"" + products[i] + "\",\"price\":\"" + (1999 + i * 1000) + "元\",\"stock\":\"现货\",\"seller\":\"官方旗舰店\"}");
+                data.setStatus("valid");
+                collectDataRepository.save(data);
+            }
+        }
+
+        // 为配置3添加采集数据
+        CollectConfig cfg3 = configs.stream().filter(c -> "社交媒体舆情采集".equals(c.getName())).findFirst().orElse(null);
+        if (cfg3 != null) {
+            String[] topics = {"产品发布", "用户反馈", "行业趋势", "优惠活动", "新品测评"};
+            for (int i = 0; i < 5; i++) {
+                CollectData data = new CollectData();
+                data.setConfigId(cfg3.getId());
+                data.setSourceUrl("https://api.social.com/post/" + (i + 1));
+                data.setDataHash("hash_social_" + i);
+                data.setDataContent("{\"content\":\"社交媒体内容关于" + topics[i] + "\",\"likes\":" + ((i + 1) * 128) + ",\"comments\":" + ((i + 1) * 23) + ",\"shares\":" + ((i + 1) * 15) + "}");
+                data.setStatus("valid");
+                collectDataRepository.save(data);
+            }
+        }
+
+        // 为配置5添加采集数据
+        CollectConfig cfg5 = configs.stream().filter(c -> "业务数据库数据同步".equals(c.getName())).findFirst().orElse(null);
+        if (cfg5 != null) {
+            String[] customers = {"北京科技有限公司", "上海贸易公司", "广州实业集团", "深圳创新企业", "杭州电商公司"};
+            for (int i = 0; i < 5; i++) {
+                CollectData data = new CollectData();
+                data.setConfigId(cfg5.getId());
+                data.setSourceUrl("jdbc:mysql://localhost:3306/business_db/orders/" + (i + 1));
+                data.setDataHash("hash_order_" + i);
+                data.setDataContent("{\"orderId\":\"ORD202604" + String.format("%03d", i + 1) + "\",\"customerName\":\"" + customers[i] + "\",\"amount\":" + ((i + 1) * 15800) + ",\"status\":\"pending\",\"createTime\":\"2026-04-" + String.format("%02d", i + 1) + " 10:30:00\"}");
+                data.setStatus("valid");
+                collectDataRepository.save(data);
+            }
+        }
+
+        log.info("✅ 采集数据初始化完成，共 {} 条", collectDataRepository.count());
     }
 }
+
+

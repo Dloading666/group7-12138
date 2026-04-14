@@ -1,62 +1,94 @@
 package com.rpa.management.entity;
 
-import com.rpa.management.common.entity.BaseEntity;
-import com.rpa.management.common.enums.UserStatus;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.experimental.Accessors;
+import jakarta.persistence.*;
+import lombok.Data;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
-@Getter
-@Setter
-@NoArgsConstructor
-@Accessors(chain = true)
+/**
+ * 用户实体类
+ */
+@Data
 @Entity
-@Table(name = "users", indexes = {
-    @Index(name = "idx_users_username", columnList = "username"),
-    @Index(name = "idx_users_role_id", columnList = "roleId"),
-    @Index(name = "idx_users_status", columnList = "status")
-})
-public class User extends BaseEntity {
-
-    @Column(nullable = false, unique = true, length = 64)
+@Table(name = "sys_user")
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    /**
+     * 用户名
+     */
+    @Column(unique = true, nullable = false, length = 50)
     private String username;
-
+    
+    /**
+     * 密码（加密存储）
+     */
     @Column(nullable = false, length = 255)
     private String password;
-
-    @Column(nullable = false, length = 64)
+    
+    /**
+     * 真实姓名
+     */
+    @Column(length = 50)
     private String realName;
-
-    @Column(length = 128)
+    
+    /**
+     * 邮箱
+     */
+    @Column(length = 100)
     private String email;
-
-    @Column(length = 32)
+    
+    /**
+     * 手机号
+     */
+    @Column(length = 20)
     private String phone;
-
-    @Column(length = 255)
-    private String avatar;
-
-    @Column(nullable = false)
-    private Long roleId;
-
+    
+    /**
+     * 用户角色
+     */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private UserStatus status = UserStatus.ACTIVE;
-
-    @Column(name = "super_admin", nullable = false)
-    private boolean superAdmin = false;
-
+    private UserRole role;
+    
+    /**
+     * 账号状态：active-启用，inactive-禁用
+     */
+    @Column(nullable = false, length = 20)
+    private String status = "active";
+    
+    /**
+     * 头像URL
+     */
+    @Column(length = 255)
+    private String avatar;
+    
+    /**
+     * 创建时间
+     */
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createTime;
+    
+    /**
+     * 更新时间
+     */
+    @UpdateTimestamp
+    private LocalDateTime updateTime;
+    
+    /**
+     * 最后登录时间
+     */
+    private LocalDateTime lastLoginTime;
+    
+    /**
+     * 最后登录IP
+     */
     @Column(length = 50)
     private String lastLoginIp;
-
-    private LocalDateTime lastLoginAt;
 }

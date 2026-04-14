@@ -1,0 +1,75 @@
+# 测试接口文档
+
+# 环境变量
+@baseUrl = http://localhost:8080/api
+@token = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsInVzZXJJZCI6MSwicm9sZSI6IkFETUlOIiwiaWF0IjoxNzA0MDY3MjAwLCJleHAiOjE3MDQxNTM2MDB9.xxxxx
+
+### 1. 登录接口测试
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "admin123"
+}
+
+### 2. 获取当前用户信息
+GET {{baseUrl}}/auth/userinfo
+Authorization: Bearer {{token}}
+
+### 3. 用户登出
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{token}}
+
+### 4. 获取个人资料
+GET {{baseUrl}}/user/profile
+Authorization: Bearer {{token}}
+
+### 5. 更新个人资料
+PUT {{baseUrl}}/user/profile
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "realName": "管理员",
+  "email": "admin@newemail.com",
+  "phone": "13900139000"
+}
+
+### 6. 修改密码
+PUT {{baseUrl}}/user/password
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "oldPassword": "admin123",
+  "newPassword": "newpassword123"
+}
+
+### 7. 获取我的任务列表
+GET {{baseUrl}}/user/tasks
+Authorization: Bearer {{token}}
+
+### 8. 管理员 - 获取所有用户
+GET {{baseUrl}}/admin/users
+Authorization: Bearer {{token}}
+
+### 9. 管理员 - 创建用户
+POST {{baseUrl}}/admin/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "username": "user01",
+  "password": "user123",
+  "realName": "用户01",
+  "email": "user01@example.com"
+}
+
+### 10. 管理员 - 禁用用户
+PUT {{baseUrl}}/admin/users/2/disable
+Authorization: Bearer {{token}}
+
+### 11. 管理员 - 获取系统统计
+GET {{baseUrl}}/admin/statistics
+Authorization: Bearer {{token}}

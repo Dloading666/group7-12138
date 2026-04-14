@@ -1,31 +1,83 @@
 package com.rpa.management.entity;
 
-import com.rpa.management.common.entity.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.experimental.Accessors;
+import jakarta.persistence.*;
+import lombok.Data;
+import org.hibernate.annotations.CreationTimestamp;
 
-@Getter
-@Setter
-@NoArgsConstructor
-@Accessors(chain = true)
+import java.time.LocalDateTime;
+
+/**
+ * 执行日志实体类
+ */
+@Data
 @Entity
-@Table(name = "execution_logs", indexes = {
-    @Index(name = "idx_execution_logs_task_id", columnList = "taskId")
-})
-public class ExecutionLog extends BaseEntity {
-
+@Table(name = "sys_execution_log")
+public class ExecutionLog {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    /**
+     * 任务ID
+     */
+    @Column(name = "task_id", nullable = false)
     private Long taskId;
+    
+    /**
+     * 任务编号
+     */
+    @Column(name = "task_code", length = 50)
+    private String taskCode;
+    
+    /**
+     * 任务名称
+     */
+    @Column(name = "task_name", length = 100)
+    private String taskName;
+    
+    /**
+     * 机器人ID
+     */
+    @Column(name = "robot_id")
     private Long robotId;
-
-    @Column(length = 32)
-    private String level;
-
-    @Column(columnDefinition = "LONGTEXT")
+    
+    /**
+     * 机器人名称
+     */
+    @Column(name = "robot_name", length = 50)
+    private String robotName;
+    
+    /**
+     * 日志级别: INFO, WARN, ERROR
+     */
+    @Column(nullable = false, length = 20)
+    private String level = "INFO";
+    
+    /**
+     * 日志内容
+     */
+    @Lob
+    @Column(nullable = false, name = "message")
     private String message;
+    
+    /**
+     * 执行阶段: start, process, end, error
+     */
+    @Column(name = "stage", length = 50)
+    private String stage;
+    
+    /**
+     * 额外数据（JSON格式）
+     */
+    @Lob
+    @Column(name = "extra_data")
+    private String extraData;
+    
+    /**
+     * 创建时间
+     */
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createTime;
 }

@@ -1,82 +1,175 @@
 package com.rpa.management.controller;
 
-import com.rpa.management.common.ApiResponse;
-import com.rpa.management.common.PaginationUtils;
-import com.rpa.management.common.PageResponse;
-import com.rpa.management.dto.RobotDto;
-import com.rpa.management.dto.RobotStatusChangeRequest;
-import com.rpa.management.dto.RobotUpsertRequest;
-import com.rpa.management.security.PermissionCodes;
+import com.rpa.management.dto.ApiResponse;
+import com.rpa.management.dto.RobotDTO;
 import com.rpa.management.service.RobotService;
-import jakarta.validation.Valid;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
+/**
+ * 机器人管理控制器
+ */
+@Slf4j
+@Tag(name = "机器人管理", description = "机器人的增删改查和控制接口")
 @RestController
 @RequestMapping("/robots")
+@RequiredArgsConstructor
 public class RobotController {
-
+    
     private final RobotService robotService;
-
-    public RobotController(RobotService robotService) {
-        this.robotService = robotService;
-    }
-
-    @GetMapping
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).ROBOT_VIEW)")
-    public ApiResponse<PageResponse<RobotDto>> list(@RequestParam(defaultValue = "1") int page,
-                                                    @RequestParam(defaultValue = "10") int size) {
-        return ApiResponse.success(PaginationUtils.page(robotService.listAll(), page, size));
-    }
-
-    @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).ROBOT_VIEW)")
-    public ApiResponse<RobotDto> detail(@PathVariable Long id) {
-        return ApiResponse.success(robotService.getById(id));
-    }
-
+    
+    /**
+     * 创建机器人
+     */
+    @Operation(summary = "创建机器人", description = "创建新的机器人")
     @PostMapping
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).ROBOT_CREATE)")
-    public ApiResponse<RobotDto> create(@Valid @RequestBody RobotUpsertRequest request) {
-        return ApiResponse.success(robotService.create(request));
+    public ApiResponse<RobotDTO> createRobot(@RequestBody RobotDTO dto) {
+        try {
+            RobotDTO robot = robotService.createRobot(dto);
+            return ApiResponse.success("创建机器人成功", robot);
+        } catch (Exception e) {
+            log.error("创建机器人失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
     }
-
+    
+    /**
+     * 更新机器人
+     */
+    @Operation(summary = "更新机器人", description = "更新机器人信息")
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).ROBOT_UPDATE)")
-    public ApiResponse<RobotDto> update(@PathVariable Long id, @Valid @RequestBody RobotUpsertRequest request) {
-        return ApiResponse.success(robotService.update(id, request));
+    public ApiResponse<RobotDTO> updateRobot(
+            @Parameter(description = "机器人ID") @PathVariable Long id,
+            @RequestBody RobotDTO dto) {
+        try {
+            RobotDTO robot = robotService.updateRobot(id, dto);
+            return ApiResponse.success("更新机器人成功", robot);
+        } catch (Exception e) {
+            log.error("更新机器人失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
     }
-
+    
+    /**
+     * 删除机器人
+     */
+    @Operation(summary = "删除机器人", description = "删除指定机器人")
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).ROBOT_DELETE)")
-    public ApiResponse<Void> delete(@PathVariable Long id) {
-        robotService.delete(id);
-        return ApiResponse.success("OK", null);
+    public ApiResponse<Void> deleteRobot(@Parameter(description = "机器人ID") @PathVariable Long id) {
+        try {
+            robotService.deleteRobot(id);
+            return ApiResponse.success("删除机器人成功", null);
+        } catch (Exception e) {
+            log.error("删除机器人失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
+    }
+    
+    /**
+     * 获取机器人详情
+     */
+    @Operation(summary = "获取机器人详情", description = "根据ID获取机器人详细信息")
+    @GetMapping("/{id}")
+    public ApiResponse<RobotDTO> getRobotById(@Parameter(description = "机器人ID") @PathVariable Long id) {
+        try {
+            RobotDTO robot = robotService.getRobotById(id);
+            return ApiResponse.success(robot);
+        } catch (Exception e) {
+            log.error("获取机器人失败: {}", e.getMessage());
+            return ApiResponse.error(404, e.getMessage());
+        }
+    }
+    
+    /**
+     * 获取所有机器人
+     */
+    @Operation(summary = "获取所有机器人", description = "获取所有机器人列表")
+    @GetMapping("/all")
+    public ApiResponse<List<RobotDTO>> getAllRobots() {
+        List<RobotDTO> robots = robotService.getAllRobots();
+        return ApiResponse.success(robots);
+    }
+    
+    /**
+     * 分页查询机器人
+     */
+    @Operation(summary = "分页查询机器人", description = "分页查询机器人列表，支持条件筛选")
+    @GetMapping
+    public ApiResponse<Page<RobotDTO>> getRobotsByPage(
+            @Parameter(description = "机器人名称") @RequestParam(required = false) String name,
+            @Parameter(description = "机器人类型") @RequestParam(required = false) String type,
+            @Parameter(description = "状态") @RequestParam(required = false) String status,
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页大小") @RequestParam(defaultValue = "10") int size) {
+        Page<RobotDTO> robotPage = robotService.getRobotsByPage(name, type, status, page, size);
+        return ApiResponse.success(robotPage);
+    }
+    
+    /**
+     * 更新机器人状态
+     */
+    @Operation(summary = "更新机器人状态", description = "单独更新机器人状态字段")
+    @PatchMapping("/{id}/status")
+    public ApiResponse<RobotDTO> updateRobotStatus(
+            @Parameter(description = "机器人ID") @PathVariable Long id,
+            @RequestBody java.util.Map<String, String> body) {
+        try {
+            String status = body.get("status");
+            if (status == null || status.isBlank()) {
+                return ApiResponse.error(400, "状态不能为空");
+            }
+            RobotDTO robot = robotService.updateRobotStatus(id, status);
+            return ApiResponse.success("更新状态成功", robot);
+        } catch (Exception e) {
+            log.error("更新机器人状态失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
     }
 
+    /**
+     * 启动机器人
+     */
+    @Operation(summary = "启动机器人", description = "启动机器人运行")
     @PostMapping("/{id}/start")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).ROBOT_START)")
-    public ApiResponse<RobotDto> start(@PathVariable Long id) {
-        return ApiResponse.success(robotService.start(id));
+    public ApiResponse<RobotDTO> startRobot(@Parameter(description = "机器人ID") @PathVariable Long id) {
+        try {
+            RobotDTO robot = robotService.startRobot(id);
+            return ApiResponse.success("机器人启动成功", robot);
+        } catch (Exception e) {
+            log.error("启动机器人失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
     }
-
+    
+    /**
+     * 停止机器人
+     */
+    @Operation(summary = "停止机器人", description = "停止机器人运行")
     @PostMapping("/{id}/stop")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).ROBOT_STOP)")
-    public ApiResponse<RobotDto> stop(@PathVariable Long id) {
-        return ApiResponse.success(robotService.stop(id));
+    public ApiResponse<RobotDTO> stopRobot(@Parameter(description = "机器人ID") @PathVariable Long id) {
+        try {
+            RobotDTO robot = robotService.stopRobot(id);
+            return ApiResponse.success("机器人停止成功", robot);
+        } catch (Exception e) {
+            log.error("停止机器人失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
     }
-
-    @PutMapping("/{id}/status")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).ROBOT_UPDATE)")
-    public ApiResponse<RobotDto> changeStatus(@PathVariable Long id, @Valid @RequestBody RobotStatusChangeRequest request) {
-        return ApiResponse.success(robotService.changeStatus(id, request));
+    
+    /**
+     * 获取机器人统计
+     */
+    @Operation(summary = "获取机器人统计", description = "获取机器人统计数据")
+    @GetMapping("/stats")
+    public ApiResponse<RobotService.RobotStats> getRobotStats() {
+        RobotService.RobotStats stats = robotService.getRobotStats();
+        return ApiResponse.success(stats);
     }
 }

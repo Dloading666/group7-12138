@@ -1,75 +1,141 @@
 package com.rpa.management.controller;
 
-import com.rpa.management.common.ApiResponse;
-import com.rpa.management.common.enums.PermissionStatus;
-import com.rpa.management.dto.PermissionNodeDto;
-import com.rpa.management.dto.PermissionStatusRequest;
-import com.rpa.management.dto.PermissionUpsertRequest;
-import com.rpa.management.security.PermissionCodes;
+import com.rpa.management.dto.ApiResponse;
+import com.rpa.management.dto.PermissionDTO;
 import com.rpa.management.service.PermissionService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * 权限管理控制器
+ */
+@Slf4j
+@Tag(name = "权限管理", description = "权限资源的增删改查接口")
 @RestController
 @RequestMapping("/permissions")
+@RequiredArgsConstructor
 public class PermissionController {
-
+    
     private final PermissionService permissionService;
-
-    public PermissionController(PermissionService permissionService) {
-        this.permissionService = permissionService;
-    }
-
-    @GetMapping("/tree")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).PERMISSION_VIEW)")
-    public ApiResponse<List<PermissionNodeDto>> tree() {
-        return ApiResponse.success(permissionService.tree());
-    }
-
-    @GetMapping
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).PERMISSION_VIEW)")
-    public ApiResponse<List<PermissionNodeDto>> list() {
-        return ApiResponse.success(permissionService.listAll());
-    }
-
-    @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).PERMISSION_VIEW)")
-    public ApiResponse<PermissionNodeDto> detail(@PathVariable Long id) {
-        return ApiResponse.success(permissionService.getById(id));
-    }
-
+    
+    /**
+     * 创建权限
+     */
+    @Operation(summary = "创建权限", description = "创建新的权限资源")
     @PostMapping
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).PERMISSION_CREATE)")
-    public ApiResponse<PermissionNodeDto> create(@Valid @RequestBody PermissionUpsertRequest request) {
-        return ApiResponse.success(permissionService.create(request));
+    public ApiResponse<PermissionDTO> createPermission(@Valid @RequestBody PermissionDTO dto) {
+        try {
+            PermissionDTO permission = permissionService.createPermission(dto);
+            return ApiResponse.success("创建权限成功", permission);
+        } catch (Exception e) {
+            log.error("创建权限失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
     }
-
+    
+    /**
+     * 更新权限
+     */
+    @Operation(summary = "更新权限", description = "更新指定权限的信息")
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).PERMISSION_UPDATE)")
-    public ApiResponse<PermissionNodeDto> update(@PathVariable Long id, @Valid @RequestBody PermissionUpsertRequest request) {
-        return ApiResponse.success(permissionService.update(id, request));
+    public ApiResponse<PermissionDTO> updatePermission(
+            @Parameter(description = "权限ID") @PathVariable Long id,
+            @Valid @RequestBody PermissionDTO dto) {
+        try {
+            PermissionDTO permission = permissionService.updatePermission(id, dto);
+            return ApiResponse.success("更新权限成功", permission);
+        } catch (Exception e) {
+            log.error("更新权限失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
     }
-
-    @PutMapping("/{id}/status")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).PERMISSION_STATUS)")
-    public ApiResponse<PermissionNodeDto> updateStatus(@PathVariable Long id, @Valid @RequestBody PermissionStatusRequest request) {
-        return ApiResponse.success(permissionService.updateStatus(id, request.status()));
-    }
-
+    
+    /**
+     * 删除权限
+     */
+    @Operation(summary = "删除权限", description = "删除指定权限")
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority(T(com.rpa.management.security.PermissionCodes).PERMISSION_DELETE)")
-    public ApiResponse<Void> delete(@PathVariable Long id) {
-        permissionService.delete(id);
-        return ApiResponse.success("OK", null);
+    public ApiResponse<Void> deletePermission(@Parameter(description = "权限ID") @PathVariable Long id) {
+        try {
+            permissionService.deletePermission(id);
+            return ApiResponse.success("删除权限成功", null);
+        } catch (Exception e) {
+            log.error("删除权限失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
+    }
+    
+    /**
+     * 批量删除权限
+     */
+    @Operation(summary = "批量删除权限", description = "批量删除多个权限")
+    @DeleteMapping("/batch")
+    public ApiResponse<Void> deletePermissions(@RequestBody List<Long> ids) {
+        try {
+            permissionService.deletePermissions(ids);
+            return ApiResponse.success("批量删除成功", null);
+        } catch (Exception e) {
+            log.error("批量删除权限失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
+    }
+    
+    /**
+     * 根据ID查询权限
+     */
+    @Operation(summary = "查询权限详情", description = "根据ID查询权限详细信息")
+    @GetMapping("/{id}")
+    public ApiResponse<PermissionDTO> getPermissionById(@Parameter(description = "权限ID") @PathVariable Long id) {
+        try {
+            PermissionDTO permission = permissionService.getPermissionById(id);
+            return ApiResponse.success(permission);
+        } catch (Exception e) {
+            log.error("查询权限失败: {}", e.getMessage());
+            return ApiResponse.error(404, e.getMessage());
+        }
+    }
+    
+    /**
+     * 查询所有权限
+     */
+    @Operation(summary = "查询所有权限", description = "获取所有权限列表")
+    @GetMapping("/all")
+    public ApiResponse<List<PermissionDTO>> getAllPermissions() {
+        List<PermissionDTO> permissions = permissionService.getAllPermissions();
+        return ApiResponse.success(permissions);
+    }
+    
+    /**
+     * 获取权限树形结构
+     */
+    @Operation(summary = "获取权限树", description = "获取树形结构的权限列表")
+    @GetMapping("/tree")
+    public ApiResponse<List<PermissionDTO>> getPermissionTree() {
+        List<PermissionDTO> tree = permissionService.getPermissionTree();
+        return ApiResponse.success(tree);
+    }
+    
+    /**
+     * 更新权限状态
+     */
+    @Operation(summary = "更新权限状态", description = "启用或禁用权限")
+    @PutMapping("/{id}/status")
+    public ApiResponse<Void> updateStatus(
+            @Parameter(description = "权限ID") @PathVariable Long id,
+            @Parameter(description = "状态") @RequestParam String status) {
+        try {
+            permissionService.updateStatus(id, status);
+            return ApiResponse.success("状态更新成功", null);
+        } catch (Exception e) {
+            log.error("更新权限状态失败: {}", e.getMessage());
+            return ApiResponse.error(400, e.getMessage());
+        }
     }
 }

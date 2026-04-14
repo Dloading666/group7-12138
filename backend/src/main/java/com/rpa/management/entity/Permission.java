@@ -1,56 +1,88 @@
 package com.rpa.management.entity;
 
-import com.rpa.management.common.entity.BaseEntity;
-import com.rpa.management.common.enums.PermissionStatus;
-import com.rpa.management.common.enums.PermissionType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.experimental.Accessors;
+import jakarta.persistence.*;
+import lombok.Data;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
-@Getter
-@Setter
-@NoArgsConstructor
-@Accessors(chain = true)
+import java.time.LocalDateTime;
+
+/**
+ * 权限/资源实体类
+ */
+@Data
 @Entity
-@Table(name = "permissions", indexes = {
-    @Index(name = "idx_permissions_code", columnList = "code"),
-    @Index(name = "idx_permissions_parent_id", columnList = "parentId"),
-    @Index(name = "idx_permissions_type", columnList = "type")
-})
-public class Permission extends BaseEntity {
-
-    @Column(nullable = false, length = 64)
+@Table(name = "sys_permission")
+public class Permission {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    /**
+     * 权限名称
+     */
+    @Column(nullable = false, length = 50)
     private String name;
-
-    @Column(nullable = false, unique = true, length = 128)
+    
+    /**
+     * 权限编码（唯一标识）
+     */
+    @Column(unique = true, nullable = false, length = 100)
     private String code;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "permission_type", nullable = false, length = 20)
-    private PermissionType type;
-
-    private Long parentId;
-
-    @Column(length = 255)
-    private String path;
-
-    @Column(length = 255)
-    private String component;
-
-    @Column(length = 64)
-    private String icon;
-
-    @Column(name = "sort_order", nullable = false)
-    private Integer sortOrder = 0;
-
-    @Enumerated(EnumType.STRING)
+    
+    /**
+     * 权限类型：menu-菜单，button-按钮，api-接口
+     */
     @Column(nullable = false, length = 20)
-    private PermissionStatus status = PermissionStatus.ACTIVE;
+    private String type = "menu";
+    
+    /**
+     * 父级ID（用于树形结构）
+     */
+    @Column(name = "parent_id")
+    private Long parentId = 0L;
+    
+    /**
+     * 路由路径
+     */
+    @Column(length = 200)
+    private String path;
+    
+    /**
+     * 图标
+     */
+    @Column(length = 50)
+    private String icon;
+    
+    /**
+     * 排序号
+     */
+    @Column(name = "sort_order")
+    private Integer sortOrder = 0;
+    
+    /**
+     * 权限状态：active-启用，inactive-禁用
+     */
+    @Column(nullable = false, length = 20)
+    private String status = "active";
+    
+    /**
+     * 描述
+     */
+    @Column(length = 200)
+    private String description;
+    
+    /**
+     * 创建时间
+     */
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createTime;
+    
+    /**
+     * 更新时间
+     */
+    @UpdateTimestamp
+    private LocalDateTime updateTime;
 }

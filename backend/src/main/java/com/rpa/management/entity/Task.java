@@ -1,71 +1,144 @@
 package com.rpa.management.entity;
 
-import com.rpa.management.common.entity.BaseEntity;
-import com.rpa.management.common.enums.ExecuteType;
-import com.rpa.management.common.enums.TaskPriority;
-import com.rpa.management.common.enums.TaskStatus;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.experimental.Accessors;
+import jakarta.persistence.*;
+import lombok.Data;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
-@Getter
-@Setter
-@NoArgsConstructor
-@Accessors(chain = true)
+/**
+ * 任务实体类
+ */
+@Data
 @Entity
-@Table(name = "tasks", indexes = {
-    @Index(name = "idx_tasks_task_no", columnList = "taskNo"),
-    @Index(name = "idx_tasks_status", columnList = "status"),
-    @Index(name = "idx_tasks_priority", columnList = "priority")
-})
-public class Task extends BaseEntity {
-
-    @Column(nullable = false, unique = true, length = 64)
-    private String taskNo;
-
-    @Column(nullable = false, length = 128)
+@Table(name = "sys_task")
+public class Task {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    /**
+     * 任务编号
+     */
+    @Column(name = "task_id", unique = true, length = 50)
+    private String taskId;
+    
+    /**
+     * 任务名称
+     */
+    @Column(nullable = false, length = 100)
     private String name;
-
-    @Column(name = "task_type", length = 64)
+    
+    /**
+     * 任务类型
+     */
+    @Column(length = 50)
     private String type;
-
-    @Enumerated(EnumType.STRING)
+    
+    /**
+     * 任务状态：pending-等待中，running-执行中，completed-已完成，failed-失败
+     */
     @Column(nullable = false, length = 20)
-    private TaskStatus status = TaskStatus.PENDING;
-
+    private String status = "pending";
+    
+    /**
+     * 执行进度（0-100）
+     */
     @Column(nullable = false)
     private Integer progress = 0;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private TaskPriority priority = TaskPriority.MEDIUM;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private ExecuteType executeType = ExecuteType.IMMEDIATE;
-
-    private LocalDateTime scheduleTime;
-
+    
+    /**
+     * 执行机器人ID
+     */
+    @Column(name = "robot_id")
     private Long robotId;
+    
+    /**
+     * 执行机器人名称
+     */
+    @Column(name = "robot_name", length = 50)
+    private String robotName;
+    
+    /**
+     * 优先级：high-高，medium-中，low-低
+     */
+    @Column(length = 20)
+    private String priority = "medium";
+    
+    /**
+     * 执行方式：immediate-立即执行，scheduled-定时执行
+     */
+    @Column(name = "execute_type", length = 20)
+    private String executeType = "immediate";
+    
+    /**
+     * 计划执行时间
+     */
+    @Column(name = "scheduled_time")
+    private LocalDateTime scheduledTime;
+    
+    /**
+     * 实际开始时间
+     */
+    @Column(name = "start_time")
+    private LocalDateTime startTime;
+    
+    /**
+     * 实际结束时间
+     */
+    @Column(name = "end_time")
+    private LocalDateTime endTime;
+    
+    /**
+     * 执行耗时（秒）
+     */
+    private Integer duration = 0;
+    
+    /**
+     * 创建用户ID
+     */
+    @Column(name = "user_id")
+    private Long userId;
+    
+    /**
+     * 创建用户名
+     */
+    @Column(name = "user_name", length = 50)
+    private String userName;
+    
+    /**
+     * 任务描述
+     */
+    @Lob
+    @Column(name = "description")
+    private String description;
 
-    private Long createdByUserId;
-
-    @Column(columnDefinition = "LONGTEXT")
-    private String params;
-
-    @Column(columnDefinition = "LONGTEXT")
+    /**
+     * 执行结果
+     */
+    @Lob
+    @Column(name = "result")
     private String result;
 
-    private LocalDateTime startTime;
-    private LocalDateTime endTime;
-    private Integer duration;
+    /**
+     * 错误信息
+     */
+    @Lob
+    @Column(name = "error_message")
+    private String errorMessage;
+    
+    /**
+     * 创建时间
+     */
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createTime;
+    
+    /**
+     * 更新时间
+     */
+    @UpdateTimestamp
+    private LocalDateTime updateTime;
 }

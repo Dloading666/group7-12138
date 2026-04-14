@@ -1,0 +1,668 @@
+<template>
+  <div class="execution-logs">
+    <!-- 左侧主内容区 -->
+    <div class="main-content">
+      <!-- 页面标题 -->
+      <div class="page-title">执行日志</div>
+
+      <!-- 统计卡片 -->
+      <div class="stats-cards">
+        <div class="stat-card">
+          <div class="stat-value">{{ stats.total }}</div>
+          <div class="stat-label">总日志数</div>
+        </div>
+        <div class="stat-card success">
+          <div class="stat-value">{{ stats.info }}</div>
+          <div class="stat-label">INFO</div>
+        </div>
+        <div class="stat-card running">
+          <div class="stat-value">{{ stats.warn }}</div>
+          <div class="stat-label">WARN</div>
+        </div>
+        <div class="stat-card failed">
+          <div class="stat-value">{{ stats.error }}</div>
+          <div class="stat-label">ERROR</div>
+        </div>
+      </div>
+
+      <!-- 查询区域 -->
+      <div class="search-area">
+        <div class="search-item">
+          <span class="search-label">任务ID:</span>
+          <el-input 
+            v-model="searchForm.taskCode" 
+            placeholder="请输入"
+            style="width: 150px;"
+            clearable
+          />
+        </div>
+        <div class="search-item">
+          <span class="search-label">状态:</span>
+          <el-select 
+            v-model="searchForm.level" 
+            placeholder="请选择"
+            style="width: 150px;"
+            clearable
+          >
+            <el-option label="INFO" value="INFO" />
+            <el-option label="WARN" value="WARN" />
+            <el-option label="ERROR" value="ERROR" />
+          </el-select>
+        </div>
+        <div class="search-item">
+          <span class="search-label">解析时间:</span>
+          <el-date-picker
+            v-model="searchForm.dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始时间"
+            end-placeholder="结束时间"
+            value-format="YYYY-MM-DD"
+            style="width: 240px;"
+          />
+        </div>
+        <div class="search-buttons">
+          <el-button type="primary" @click="handleSearch">查询</el-button>
+          <el-button @click="handleReset">重置</el-button>
+        </div>
+      </div>
+
+      <!-- 数据表格 -->
+      <div class="table-wrapper">
+        <el-table 
+          :data="tableData" 
+          v-loading="loading"
+          border
+          stripe
+          style="width: 100%"
+        >
+          <el-table-column type="index" label="序号" width="70" align="center" />
+          
+          <el-table-column prop="taskId" label="任务ID" width="120">
+            <template #default="{ row }">
+              <span class="task-id">{{ row.taskId || '-' }}</span>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="collectId" label="采集ID" width="120">
+            <template #default="{ row }">
+              <span class="task-id">{{ row.collectId || '-' }}</span>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="level" label="状态" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="getTagType(row.level)" size="small" effect="light">
+                {{ getStatusText(row.level) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="fieldCount" label="提取字段数" width="120">
+            <template #default="{ row }">
+              <span class="field-count">{{ row.fieldCount || '-' }}</span>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="parseRule" label="解析规则" min-width="150">
+            <template #default="{ row }">
+              <span class="rule-text">{{ row.parseRule || '-' }}</span>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="createTime" label="解析时间" width="170">
+            <template #default="{ row }">
+              <span class="time-text">{{ formatDateTime(row.createTime) }}</span>
+            </template>
+          </el-table-column>
+          
+          <el-table-column label="操作" width="140" fixed="right" align="center">
+            <template #default="{ row }">
+              <el-button type="primary" link size="small" @click="handleView(row)">查看</el-button>
+              <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <!-- 分页 -->
+      <div class="pagination-wrapper">
+        <div class="pagination-total">Total {{ total }}</div>
+        <el-pagination
+          v-model:current-page="pageNum"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="sizes, prev, pager, next, jumper"
+          :total="total"
+          background
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
+    </div>
+
+    <!-- 右侧面板 -->
+    <div class="side-panel">
+      <!-- 机器人状态 -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">日志统计</span>
+        </div>
+        
+        <div class="log-stats">
+          <div class="stat-item info">
+            <span class="stat-label">INFO日志</span>
+            <span class="stat-value">{{ stats.info }}</span>
+          </div>
+          <div class="stat-item warn">
+            <span class="stat-label">WARN日志</span>
+            <span class="stat-value">{{ stats.warn }}</span>
+          </div>
+          <div class="stat-item error">
+            <span class="stat-label">ERROR日志</span>
+            <span class="stat-value">{{ stats.error }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作按钮 -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">批量操作</span>
+        </div>
+        
+        <div class="action-buttons">
+          <el-button type="primary" size="small" @click="handleExport" :loading="exportLoading">
+            <el-icon><Download /></el-icon>
+            导出日志
+          </el-button>
+          <el-button type="danger" size="small" @click="handleClear">
+            <el-icon><Delete /></el-icon>
+            清空日志
+          </el-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 查看详情弹窗 -->
+    <el-dialog 
+      v-model="detailVisible" 
+      title="日志详情" 
+      width="700px"
+      class="detail-dialog"
+    >
+      <el-descriptions :column="2" border v-if="currentRow">
+        <el-descriptions-item label="任务ID">{{ currentRow.taskId || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="日志级别">
+          <el-tag :type="getTagType(currentRow.level)" size="small">
+            {{ getStatusText(currentRow.level) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="机器人名称">{{ currentRow.robotName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatDateTime(currentRow.createTime) }}</el-descriptions-item>
+        <el-descriptions-item label="日志内容" :span="2">
+          <pre class="log-content">{{ currentRow.message || '-' }}</pre>
+        </el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Download, Delete } from '@element-plus/icons-vue'
+import { getLogList, clearAllLogs, exportLogs } from '../../api/log.js'
+
+// 统计卡片数据
+const stats = ref({
+  total: 0,
+  info: 0,
+  warn: 0,
+  error: 0
+})
+
+// 查询表单
+const searchForm = ref({
+  taskCode: '',
+  level: '',
+  dateRange: null
+})
+
+// 表格数据
+const tableData = ref([])
+const loading = ref(false)
+
+// 分页
+const pageNum = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+
+// 详情弹窗
+const detailVisible = ref(false)
+const currentRow = ref(null)
+
+// 导出加载状态
+const exportLoading = ref(false)
+
+// 加载日志列表
+const loadLogList = async () => {
+  loading.value = true
+  try {
+    const params = {
+      page: pageNum.value,
+      size: pageSize.value
+    }
+    
+    if (searchForm.value.taskCode) {
+      params.taskCode = searchForm.value.taskCode
+    }
+    if (searchForm.value.level) {
+      params.level = searchForm.value.level
+    }
+    if (searchForm.value.dateRange && searchForm.value.dateRange.length === 2) {
+      params.startTime = searchForm.value.dateRange[0]
+      params.endTime = searchForm.value.dateRange[1]
+    }
+    
+    const res = await getLogList(params)
+    
+    if (res.code === 200) {
+      tableData.value = res.data.content || []
+      total.value = res.data.totalElements || 0
+      
+      // 计算统计数据
+      stats.value = {
+        total: res.data.totalElements || 0,
+        info: tableData.value.filter(t => t.level === 'INFO').length,
+        warn: tableData.value.filter(t => t.level === 'WARN').length,
+        error: tableData.value.filter(t => t.level === 'ERROR').length
+      }
+    } else {
+      ElMessage.error(res.message || '获取日志列表失败')
+    }
+  } catch (error) {
+    console.error('获取日志列表失败:', error)
+    ElMessage.error('获取日志列表失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+// 搜索
+const handleSearch = () => {
+  pageNum.value = 1
+  loadLogList()
+}
+
+// 重置
+const handleReset = () => {
+  searchForm.value = {
+    taskCode: '',
+    level: '',
+    dateRange: null
+  }
+  pageNum.value = 1
+  loadLogList()
+}
+
+// 查看
+const handleView = (row) => {
+  currentRow.value = { ...row }
+  detailVisible.value = true
+}
+
+// 删除
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除该日志吗？`, 
+      '提示', 
+      { type: 'warning' }
+    )
+    
+    const res = await clearAllLogs()
+    if (res.code === 200) {
+      ElMessage.success('删除成功')
+      loadLogList()
+    } else {
+      ElMessage.error(res.message || '删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除失败:', error)
+    }
+  }
+}
+
+// 导出日志
+const handleExport = async () => {
+  if (tableData.value.length === 0) {
+    ElMessage.warning('暂无日志可导出')
+    return
+  }
+  
+  exportLoading.value = true
+  try {
+    const params = {}
+    if (searchForm.value.taskCode) {
+      params.taskCode = searchForm.value.taskCode
+    }
+    if (searchForm.value.level) {
+      params.level = searchForm.value.level
+    }
+    if (searchForm.value.dateRange && searchForm.value.dateRange.length === 2) {
+      params.startTime = searchForm.value.dateRange[0]
+      params.endTime = searchForm.value.dateRange[1]
+    }
+    
+    const res = await exportLogs(params)
+    
+    const blob = new Blob([res], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `logs_${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(link.href)
+    
+    ElMessage.success('日志导出成功')
+  } catch (error) {
+    console.error('导出日志失败:', error)
+    ElMessage.error('导出日志失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+// 清空日志
+const handleClear = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要清空所有日志吗？此操作不可恢复！', 
+      '警告', 
+      { type: 'warning' }
+    )
+    
+    const res = await clearAllLogs()
+    if (res.code === 200) {
+      ElMessage.success('日志已清空')
+      loadLogList()
+    } else {
+      ElMessage.error(res.message || '清空失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('清空日志失败:', error)
+    }
+  }
+}
+
+// 标签类型
+const getTagType = (level) => {
+  const map = { 
+    'INFO': 'info', 
+    'WARN': 'warning', 
+    'ERROR': 'danger' 
+  }
+  return map[level] || 'info'
+}
+
+// 状态文本
+const getStatusText = (level) => {
+  const map = { 
+    'INFO': 'INFO', 
+    'WARN': 'WARN', 
+    'ERROR': 'ERROR' 
+  }
+  return map[level] || level
+}
+
+// 格式化日期时间
+const formatDateTime = (datetime) => {
+  if (!datetime) return '-'
+  return datetime.replace('T', ' ').slice(0, 19)
+}
+
+// 分页大小改变
+const handleSizeChange = (val) => {
+  pageSize.value = val
+  loadLogList()
+}
+
+// 当前页改变
+const handleCurrentChange = (val) => {
+  pageNum.value = val
+  loadLogList()
+}
+
+// 页面加载
+onMounted(() => {
+  loadLogList()
+})
+</script>
+
+<style scoped lang="scss">
+.execution-logs {
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+  background: #f5f7fa;
+  min-height: calc(100vh - 60px);
+
+  .main-content {
+    flex: 1;
+    background: #fff;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+
+    .page-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #303133;
+      margin-bottom: 16px;
+    }
+  }
+
+  .side-panel {
+    width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+
+    .panel {
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #ebeef5;
+
+        .panel-title {
+          font-size: 16px;
+          font-weight: 600;
+          color: #303133;
+        }
+      }
+    }
+
+    .log-stats {
+      .stat-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid #f5f7fa;
+
+        &:last-child {
+          border-bottom: none;
+        }
+
+        .stat-label {
+          font-size: 14px;
+          color: #606266;
+        }
+
+        .stat-value {
+          font-size: 18px;
+          font-weight: 600;
+        }
+
+        &.info .stat-value {
+          color: #409eff;
+        }
+
+        &.warn .stat-value {
+          color: #e6a23c;
+        }
+
+        &.error .stat-value {
+          color: #f56c6c;
+        }
+      }
+    }
+
+    .action-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+
+      .el-button {
+        width: 100%;
+      }
+    }
+  }
+}
+
+// 统计卡片样式
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+
+  .stat-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    color: #fff;
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .stat-label {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    &.success {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    }
+
+    &.running {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    &.failed {
+      background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+    }
+  }
+}
+
+// 查询区域样式
+.search-area {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  margin-bottom: 20px;
+
+  .search-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .search-label {
+      font-size: 14px;
+      color: #606266;
+      white-space: nowrap;
+    }
+  }
+
+  .search-buttons {
+    margin-left: auto;
+    display: flex;
+    gap: 10px;
+  }
+}
+
+// 表格样式
+.table-wrapper {
+  margin-bottom: 16px;
+
+  .task-id {
+    color: #409eff;
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .field-count {
+    color: #67c23a;
+  }
+
+  .rule-text {
+    color: #909399;
+  }
+
+  .time-text {
+    color: #606266;
+  }
+}
+
+// 分页样式
+.pagination-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  .pagination-total {
+    color: #606266;
+    font-size: 14px;
+  }
+}
+
+// 详情弹窗样式
+.detail-dialog {
+  .log-content {
+    background: #f5f7fa;
+    padding: 12px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+  }
+}
+</style>

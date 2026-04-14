@@ -1,0 +1,512 @@
+{
+  "info": {
+    "name": "RPA管理系统API",
+    "description": "爬虫管理系统后端API接口文档",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/api",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "认证接口",
+      "item": [
+        {
+          "name": "登录",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Save token\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.code === 200 && jsonData.data.token) {",
+                  "        pm.environment.set(\"token\", jsonData.data.token);",
+                  "        console.log(\"Token saved:\", jsonData.data.token);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "获取当前用户信息",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/userinfo",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "userinfo"]
+            }
+          }
+        },
+        {
+          "name": "用户登出",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "用户管理",
+      "item": [
+        {
+          "name": "获取个人资料",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "profile"]
+            }
+          }
+        },
+        {
+          "name": "更新个人资料",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"realName\": \"管理员\",\n  \"email\": \"admin@newemail.com\",\n  \"phone\": \"13900139000\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "profile"]
+            }
+          }
+        },
+        {
+          "name": "修改密码",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oldPassword\": \"admin123\",\n  \"newPassword\": \"newpassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/password",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "password"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "任务管理",
+      "item": [
+        {
+          "name": "创建任务",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"爬取电商数据\",\n  \"type\": \"数据采集\",\n  \"robotId\": 1,\n  \"robotName\": \"Robot-01\",\n  \"priority\": \"high\",\n  \"executeType\": \"immediate\",\n  \"description\": \"爬取京东商品价格数据\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["tasks"]
+            }
+          }
+        },
+        {
+          "name": "查询任务列表",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks?page=1&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["tasks"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "启动任务",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/1/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["tasks", "1", "start"]
+            }
+          }
+        },
+        {
+          "name": "停止任务",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/1/stop",
+              "host": ["{{baseUrl}}"],
+              "path": ["tasks", "1", "stop"]
+            }
+          }
+        },
+        {
+          "name": "获取任务统计",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["tasks", "stats"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "机器人管理",
+      "item": [
+        {
+          "name": "获取机器人列表",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/robots/all",
+              "host": ["{{baseUrl}}"],
+              "path": ["robots", "all"]
+            }
+          }
+        },
+        {
+          "name": "创建机器人",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"数据采集机器人01\",\n  \"type\": \"data-collection\",\n  \"description\": \"用于爬取电商网站数据\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/robots",
+              "host": ["{{baseUrl}}"],
+              "path": ["robots"]
+            }
+          }
+        },
+        {
+          "name": "更新机器人配置",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"数据采集机器人01\",\n  \"type\": \"data-collection\",\n  \"environment\": \"prod\",\n  \"concurrency\": 5,\n  \"timeout\": 600,\n  \"retryCount\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/robots/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["robots", "1"]
+            }
+          }
+        },
+        {
+          "name": "启动机器人",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/robots/1/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["robots", "1", "start"]
+            }
+          }
+        },
+        {
+          "name": "停止机器人",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/robots/1/stop",
+              "host": ["{{baseUrl}}"],
+              "path": ["robots", "1", "stop"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "执行监控",
+      "item": [
+        {
+          "name": "获取实时监控统计",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["monitor", "stats"]
+            }
+          }
+        },
+        {
+          "name": "获取执行中任务列表",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/running-tasks?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["monitor", "running-tasks"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "获取系统资源",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/system-resources",
+              "host": ["{{baseUrl}}"],
+              "path": ["monitor", "system-resources"]
+            }
+          }
+        },
+        {
+          "name": "获取任务执行详情",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/monitor/task/1/detail",
+              "host": ["{{baseUrl}}"],
+              "path": ["monitor", "task", "1", "detail"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "执行日志",
+      "item": [
+        {
+          "name": "分页查询日志",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/logs?page=1&size=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["logs"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "清空所有日志",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/logs/clear",
+              "host": ["{{baseUrl}}"],
+              "path": ["logs", "clear"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

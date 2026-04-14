@@ -1,42 +1,77 @@
 package com.rpa.management.entity;
 
-import com.rpa.management.common.entity.BaseEntity;
-import com.rpa.management.common.enums.RoleStatus;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.experimental.Accessors;
+import jakarta.persistence.*;
+import lombok.Data;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
-@Getter
-@Setter
-@NoArgsConstructor
-@Accessors(chain = true)
+import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
+
+/**
+ * 角色实体类
+ */
+@Data
 @Entity
-@Table(name = "roles", indexes = {
-    @Index(name = "idx_roles_code", columnList = "code"),
-    @Index(name = "idx_roles_status", columnList = "status")
-})
-public class Role extends BaseEntity {
-
-    @Column(nullable = false, length = 64)
+@Table(name = "sys_role")
+public class Role {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    /**
+     * 角色名称
+     */
+    @Column(nullable = false, length = 50)
     private String name;
-
-    @Column(nullable = false, unique = true, length = 64)
+    
+    /**
+     * 角色编码（唯一标识）
+     */
+    @Column(unique = true, nullable = false, length = 50)
     private String code;
-
-    @Column(length = 255)
+    
+    /**
+     * 角色描述
+     */
+    @Column(length = 200)
     private String description;
-
-    @Enumerated(EnumType.STRING)
+    
+    /**
+     * 角色状态：active-启用，inactive-禁用
+     */
     @Column(nullable = false, length = 20)
-    private RoleStatus status = RoleStatus.ACTIVE;
-
-    @Column(name = "built_in", nullable = false)
-    private boolean builtIn = false;
+    private String status = "active";
+    
+    /**
+     * 排序号
+     */
+    @Column(name = "sort_order")
+    private Integer sortOrder = 0;
+    
+    /**
+     * 创建时间
+     */
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createTime;
+    
+    /**
+     * 更新时间
+     */
+    @UpdateTimestamp
+    private LocalDateTime updateTime;
+    
+    /**
+     * 角色关联的权限列表
+     */
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "sys_role_permission",
+        joinColumns = @JoinColumn(name = "role_id"),
+        inverseJoinColumns = @JoinColumn(name = "permission_id")
+    )
+    private Set<Permission> permissions = new HashSet<>();
 }
