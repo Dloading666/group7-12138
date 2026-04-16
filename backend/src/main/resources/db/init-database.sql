@@ -1,7 +1,8 @@
 -- ============================================
--- RPA管理系统 完整数据库初始化脚本
--- 创建时间：2024
+-- RPA管理系统 完整数据库初始化脚本（DDL + 初始数据）
+-- 用途：MySQL 环境一键初始化（建表 + 写入默认用户/角色/权限数据）
 -- 数据库：MySQL 8.0+
+-- 注意：schema.sql 仅含 DDL，此文件额外包含初始化数据
 -- ============================================
 
 -- 设置字符集
@@ -124,6 +125,7 @@ CREATE TABLE `sys_task` (
     `progress` INT NOT NULL DEFAULT 0 COMMENT '执行进度（0-100）',
     `robot_id` BIGINT COMMENT '执行机器人ID',
     `robot_name` VARCHAR(50) COMMENT '执行机器人名称',
+    `params` LONGTEXT COMMENT '任务参数(JSON)',
     `priority` VARCHAR(20) DEFAULT 'medium' COMMENT '优先级：high-高，medium-中，low-低',
     `execute_type` VARCHAR(20) DEFAULT 'immediate' COMMENT '执行方式：immediate-立即，scheduled-定时',
     `scheduled_time` DATETIME COMMENT '计划执行时间',
@@ -132,10 +134,12 @@ CREATE TABLE `sys_task` (
     `duration` INT DEFAULT 0 COMMENT '执行耗时（秒）',
     `user_id` BIGINT COMMENT '创建用户ID',
     `user_name` VARCHAR(50) COMMENT '创建用户名',
-    `description` TEXT COMMENT '任务描述',
-    `result` TEXT COMMENT '执行结果',
-    `error_message` TEXT COMMENT '错误信息',
+    `description` LONGTEXT COMMENT '任务描述',
+    `result` LONGTEXT COMMENT '执行结果',
+    `error_message` LONGTEXT COMMENT '错误信息',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `tax_id` VARCHAR(50) COMMENT '税号',
+    `enterprise_name` VARCHAR(200) COMMENT '企业名称',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     
     INDEX `idx_task_id` (`task_id`),
@@ -147,6 +151,29 @@ CREATE TABLE `sys_task` (
 -- ============================================
 -- 7. 执行日志表 (sys_execution_log)
 -- ============================================
+DROP TABLE IF EXISTS `sys_crawl_result`;
+CREATE TABLE `sys_crawl_result` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `task_record_id` BIGINT COMMENT '任务主表ID',
+    `task_id` VARCHAR(50) NOT NULL UNIQUE COMMENT '任务编号',
+    `task_name` VARCHAR(100) COMMENT '任务名称',
+    `final_url` VARCHAR(1000) COMMENT '最终URL',
+    `title` VARCHAR(500) COMMENT '页面标题',
+    `summary_text` LONGTEXT COMMENT '正文摘要',
+    `raw_html` LONGTEXT COMMENT '原始HTML',
+    `structured_data` LONGTEXT COMMENT '结构化结果',
+    `total_count` INT DEFAULT 0 COMMENT '结果条数',
+    `crawled_pages` INT DEFAULT 0 COMMENT '抓取页数',
+    `status` VARCHAR(20) DEFAULT 'pending' COMMENT '状态',
+    `error_message` LONGTEXT COMMENT '错误信息',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+    INDEX `idx_crawl_result_task_record_id` (`task_record_id`),
+    INDEX `idx_crawl_result_status` (`status`),
+    INDEX `idx_crawl_result_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='真实网站抓取结果表';
+
 DROP TABLE IF EXISTS `sys_execution_log`;
 CREATE TABLE `sys_execution_log` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
@@ -193,6 +220,7 @@ CREATE TABLE `sys_collect_config` (
     `retry_count` INT DEFAULT 3 COMMENT '重试次数',
     `proxy_config` TEXT COMMENT '代理配置（JSON）',
     `output_config` TEXT COMMENT '输出配置（JSON）',
+    `spider_config` TEXT COMMENT '税务专用 spider 配置',
     `last_execute_time` DATETIME COMMENT '最后执行时间',
     `last_execute_status` VARCHAR(20) COMMENT '最后执行状态',
     `total_count` BIGINT DEFAULT 0 COMMENT '总执行次数',

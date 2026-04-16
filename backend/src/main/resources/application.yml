@@ -7,23 +7,24 @@ spring:
   application:
     name: management-system
 
-  # 数据源配置 - MySQL
+  # 数据源配置 - 支持环境变量（Docker 部署时设置 DB_HOST=mysql）
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/management_system?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:management_system}?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
 
   # JPA配置
   jpa:
     database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
         globally_quoted_identifiers: true
+        globally_quoted_identifiers_skip_column_definitions: true
 
   # H2控制台 (禁用)
   h2:
@@ -32,13 +33,22 @@ spring:
 
 # JWT配置
 jwt:
-  secret: your-secret-key-change-this-in-production-environment-at-least-256-bits
+  secret: ${JWT_SECRET:your-secret-key-change-this-in-production-environment-at-least-256-bits}
   expiration: 86400000  # 24小时 (毫秒)
   header: Authorization
   prefix: Bearer
 
+# 外部服务地址（Docker 部署时通过环境变量覆盖）
+external:
+  spider:
+    base-url: ${SPIDER_BASE_URL:http://localhost:8081}
+    callback-url: ${BACKEND_CALLBACK_BASE:http://localhost:8080}/api/spider/task/callback
+  agent:
+    base-url: ${AGENT_BASE_URL:http://localhost:5000}
+    callback-url: ${BACKEND_CALLBACK_BASE:http://localhost:8080}/api/agent/callback
+
 # 日志配置
 logging:
   level:
-    com.rpa.management: DEBUG
-    org.springframework.security: DEBUG
+    com.rpa.management: INFO
+    org.springframework.security: WARN

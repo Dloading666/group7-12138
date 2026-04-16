@@ -39,6 +39,7 @@ public class DataInitializer implements CommandLineRunner {
 
         // 初始化默认角色
         initRoles();
+        initPermissions();
 
         // 为管理员角色分配所有权限
         assignAdminPermissions();
@@ -62,10 +63,10 @@ public class DataInitializer implements CommandLineRunner {
         initWorkflowNodes();
 
         // 初始化采集任务配置
-        initCollectConfigs();
+        // initCollectConfigs();
 
         // 初始化采集数据
-        initCollectData();
+        // initCollectData();
 
         log.info("========== 数据初始化完成 ==========");
     }
@@ -229,6 +230,109 @@ public class DataInitializer implements CommandLineRunner {
     /**
      * 初始化管理员账号
      */
+    private void initPermissions() {
+        Permission system = ensurePermission("系统管理", "system:view", "menu", 0L, "/system", "Setting", 1, "系统管理模块");
+        Permission systemUser = ensurePermission("用户管理", "system:user:view", "menu", system.getId(), "/system/user", "User", 1, "用户管理");
+        ensurePermission("查看用户", "system:user:detail", "button", systemUser.getId(), null, null, 1, "查看用户详情");
+        ensurePermission("新增用户", "system:user:add", "button", systemUser.getId(), null, null, 2, "新增用户");
+        ensurePermission("编辑用户", "system:user:edit", "button", systemUser.getId(), null, null, 3, "编辑用户");
+        ensurePermission("删除用户", "system:user:delete", "button", systemUser.getId(), null, null, 4, "删除用户");
+
+        Permission systemRole = ensurePermission("角色管理", "system:role:view", "menu", system.getId(), "/system/role", "UserFilled", 2, "角色管理");
+        ensurePermission("查看角色", "system:role:detail", "button", systemRole.getId(), null, null, 1, "查看角色详情");
+        ensurePermission("新增角色", "system:role:add", "button", systemRole.getId(), null, null, 2, "新增角色");
+        ensurePermission("编辑角色", "system:role:edit", "button", systemRole.getId(), null, null, 3, "编辑角色");
+        ensurePermission("删除角色", "system:role:delete", "button", systemRole.getId(), null, null, 4, "删除角色");
+        ensurePermission("分配权限", "system:role:permission", "button", systemRole.getId(), null, null, 5, "分配权限");
+        ensurePermission("权限管理", "system:permission:view", "menu", system.getId(), "/system/permission", "Key", 3, "权限管理");
+
+        Permission task = ensurePermission("任务管理", "task:view", "menu", 0L, "/task", "List", 2, "任务管理模块");
+        Permission taskList = ensurePermission("任务列表", "task:list", "menu", task.getId(), "/task/list", "Document", 1, "任务列表");
+        ensurePermission("创建任务", "task:create", "menu", task.getId(), "/task/create", "Plus", 2, "创建任务");
+        ensurePermission("任务历史", "task:history", "menu", task.getId(), "/task/history", "Clock", 3, "任务历史");
+        ensurePermission("启动任务", "task:start", "button", taskList.getId(), null, null, 1, "启动任务");
+        ensurePermission("停止任务", "task:stop", "button", taskList.getId(), null, null, 2, "停止任务");
+
+        Permission workflow = ensurePermission("流程管理", "workflow:view", "menu", 0L, "/workflow", "Share", 3, "流程管理模块");
+        ensurePermission("流程列表", "workflow:list", "menu", workflow.getId(), "/workflow/list", "Document", 1, "流程列表");
+        ensurePermission("流程设计", "workflow:create", "menu", workflow.getId(), "/workflow/design", "Edit", 2, "流程设计");
+
+        Permission robot = ensurePermission("机器人管理", "robot:view", "menu", 0L, "/robot", "Cpu", 4, "机器人管理模块");
+        Permission robotList = ensurePermission("机器人列表", "robot:list", "menu", robot.getId(), "/robot/list", "Monitor", 1, "机器人列表");
+        ensurePermission("机器人配置", "robot:create", "menu", robot.getId(), "/robot/config", "Setting", 2, "机器人配置");
+        ensurePermission("启动机器人", "robot:start", "button", robotList.getId(), null, null, 1, "启动机器人");
+        ensurePermission("停止机器人", "robot:stop", "button", robotList.getId(), null, null, 2, "停止机器人");
+
+        Permission monitor = ensurePermission("数据管理", "monitor:view", "menu", 0L, "/monitor", "View", 5, "数据管理模块");
+        ensurePermission("数据采集", "monitor:realtime", "menu", monitor.getId(), "/monitor/realtime", "DataLine", 1, "数据采集");
+        ensurePermission("数据解析", "monitor:logs", "menu", monitor.getId(), "/monitor/logs", "Tickets", 2, "数据解析");
+
+        Permission statistics = ensurePermission("数据统计", "statistics:view", "menu", 0L, "/statistics", "DataAnalysis", 6, "数据统计模块");
+        ensurePermission("数据查询", "statistics:query", "menu", statistics.getId(), "/statistics/query", "Search", 1, "数据查询");
+        ensurePermission("统计报表", "statistics:report", "menu", statistics.getId(), "/statistics/report", "DataBoard", 2, "统计报表");
+
+        Permission settings = ensurePermission("系统设置", "settings:view", "menu", 0L, "/settings", "Tools", 7, "系统设置模块");
+        ensurePermission("基础设置", "settings:basic:view", "menu", settings.getId(), "/settings/basic", "Setting", 1, "基础设置");
+        ensurePermission("通知设置", "settings:notification:view", "menu", settings.getId(), "/settings/notification", "Bell", 2, "通知设置");
+    }
+
+    private Permission ensurePermission(String name, String code, String type, Long parentId,
+                                        String path, String icon, int sortOrder, String description) {
+        Permission existing = permissionRepository.findByCode(code);
+        if (existing != null) {
+            boolean changed = false;
+
+            if (!name.equals(existing.getName())) {
+                existing.setName(name);
+                changed = true;
+            }
+            if (!type.equals(existing.getType())) {
+                existing.setType(type);
+                changed = true;
+            }
+            Long expectedParentId = parentId == null ? 0L : parentId;
+            Long currentParentId = existing.getParentId() == null ? 0L : existing.getParentId();
+            if (!expectedParentId.equals(currentParentId)) {
+                existing.setParentId(parentId);
+                changed = true;
+            }
+            if (!java.util.Objects.equals(path, existing.getPath())) {
+                existing.setPath(path);
+                changed = true;
+            }
+            if (!java.util.Objects.equals(icon, existing.getIcon())) {
+                existing.setIcon(icon);
+                changed = true;
+            }
+            if (existing.getSortOrder() == null || existing.getSortOrder() != sortOrder) {
+                existing.setSortOrder(sortOrder);
+                changed = true;
+            }
+            if (!"active".equals(existing.getStatus())) {
+                existing.setStatus("active");
+                changed = true;
+            }
+            if (!java.util.Objects.equals(description, existing.getDescription())) {
+                existing.setDescription(description);
+                changed = true;
+            }
+
+            return changed ? permissionRepository.save(existing) : existing;
+        }
+
+        Permission permission = new Permission();
+        permission.setName(name);
+        permission.setCode(code);
+        permission.setType(type);
+        permission.setParentId(parentId);
+        permission.setPath(path);
+        permission.setIcon(icon);
+        permission.setSortOrder(sortOrder);
+        permission.setStatus("active");
+        permission.setDescription(description);
+        return permissionRepository.save(permission);
+    }
+
     private void initAdminUser() {
         if (!userRepository.existsByUsername("admin")) {
             User admin = new User();
@@ -280,6 +384,27 @@ public class DataInitializer implements CommandLineRunner {
             userRepository.save(user02);
             log.info("✅ 测试用户创建成功: user02 / user123");
         }
+
+        initGuestUser();
+    }
+
+    private void initGuestUser() {
+        if (userRepository.existsByUsername("GUEST")) {
+            log.info("✅ 访客账号已存在，跳过创建");
+            return;
+        }
+
+        User guest = new User();
+        guest.setUsername("GUEST");
+        guest.setPassword(passwordEncoder.encode("guest123"));
+        guest.setRealName("访客账号");
+        guest.setEmail("guest@example.com");
+        guest.setPhone("13900139003");
+        guest.setRole(UserRole.GUEST);
+        guest.setStatus("active");
+
+        userRepository.save(guest);
+        log.info("✅ 访客账号创建成功: GUEST / guest123");
     }
 
     /**

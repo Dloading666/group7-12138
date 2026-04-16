@@ -1,8 +1,12 @@
 package com.rpa.management.controller;
 
+import com.alibaba.fastjson2.JSONObject;
+import com.rpa.management.client.AgentApiClient;
 import com.rpa.management.dto.ApiResponse;
 import com.rpa.management.dto.NodeTypeDTO;
 import com.rpa.management.dto.WorkflowDTO;
+import com.rpa.management.entity.Task;
+import com.rpa.management.repository.TaskRepository;
 import com.rpa.management.service.NodeTypeService;
 import com.rpa.management.service.WorkflowService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,7 +18,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 流程管理控制器
@@ -28,6 +35,8 @@ public class WorkflowController {
     
     private final WorkflowService workflowService;
     private final NodeTypeService nodeTypeService;
+    private final AgentApiClient agentApiClient;
+    private final TaskRepository taskRepository;
     
     // ==================== 流程接口 ====================
     
@@ -133,6 +142,62 @@ public class WorkflowController {
         return ApiResponse.success(workflows);
     }
     
+    /**
+     * 执行流程（提交到 Python Agent）
+     * 创建 ai_workflow 类型任务并异步提交，通过 /api/agent/callback 接收执行结果
+     */
+    @Operation(summary = "执行流程", description = "将已发布的流程提交到 Python Agent 异步执行")
+    @PostMapping("/{id}/execute")
+    public ApiResponse<Map<String, Object>> executeWorkflow(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> params,
+            HttpServletRequest request) {
+        try {
+            Long userId = (Long) request.getAttribute("userId");
+            String userName = (String) request.getAttribute("username");
+
+            WorkflowDTO workflow = workflowService.getWorkflowById(id);
+            if (!"published".equals(workflow.getStatus())) {
+                return ApiResponse.error(400, "只有已发布的流程才能执行，当前状态: " + workflow.getStatus());
+            }
+
+            // 创建任务记录
+            String taskId = "TASK-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                    + "-" + id;
+            Task task = new Task();
+            task.setTaskId(taskId);
+            task.setName("流程执行: " + workflow.getName());
+            task.setType("ai_workflow");
+            task.setStatus("running");
+            task.setProgress(0);
+            task.setUserId(userId);
+            task.setUserName(userName);
+            task.setDescription("执行流程: " + workflow.getName() + " (v" + workflow.getVersion() + ")");
+            task.setStartTime(LocalDateTime.now());
+
+            JSONObject paramsJson = params != null ? new JSONObject(params) : new JSONObject();
+            paramsJson.put("workflowId", id);
+            paramsJson.put("workflowCode", workflow.getWorkflowCode());
+            paramsJson.put("workflowConfig", workflow.getConfig());
+            task.setParams(paramsJson.toJSONString());
+
+            task = taskRepository.save(task);
+
+            // 提交到 Python Agent
+            agentApiClient.submitWorkflowTask(taskId, id, paramsJson);
+
+            log.info("流程 {} 已提交执行, taskId={}", workflow.getName(), taskId);
+            return ApiResponse.success("流程执行已提交", Map.of(
+                    "taskId", taskId,
+                    "taskRecordId", task.getId(),
+                    "message", "流程已异步提交，请通过任务ID查询执行状态"
+            ));
+        } catch (Exception e) {
+            log.error("执行流程失败: {}", e.getMessage());
+            return ApiResponse.error(500, "执行流程失败: " + e.getMessage());
+        }
+    }
+
     // ==================== 节点类型接口 ====================
     
     /**

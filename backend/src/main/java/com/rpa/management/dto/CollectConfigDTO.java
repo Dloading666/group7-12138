@@ -53,8 +53,14 @@ public class CollectConfigDTO {
     private Integer retryCount;
     
     private String proxyConfig;
-    
+
     private String outputConfig;
+
+    /**
+     * 税务爬虫专用配置（JSON格式）
+     * 当 collectType = 'spider-tax' 时使用
+     */
+    private String spiderConfig;
     
     private LocalDateTime lastExecuteTime;
     

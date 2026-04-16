@@ -79,6 +79,15 @@ public class AuthController {
     }
     
     /**
+     * 健康检查（供 Docker healthcheck 和负载均衡器使用，无需认证）
+     */
+    @Operation(summary = "健康检查")
+    @GetMapping("/health")
+    public ApiResponse<String> health() {
+        return ApiResponse.success("ok");
+    }
+
+    /**
      * 获取客户端IP
      */
     private String getClientIp(HttpServletRequest request) {

@@ -21,7 +21,7 @@ public class ExecutionLog {
     /**
      * 任务ID
      */
-    @Column(name = "task_id", nullable = false)
+    @Column(name = "task_id", nullable = true)
     private Long taskId;
     
     /**
@@ -58,7 +58,7 @@ public class ExecutionLog {
      * 日志内容
      */
     @Lob
-    @Column(nullable = false, name = "message")
+    @Column(nullable = false, name = "message", columnDefinition = "TEXT")
     private String message;
     
     /**

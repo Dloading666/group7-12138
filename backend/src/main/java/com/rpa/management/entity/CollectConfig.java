@@ -157,6 +157,15 @@ public class CollectConfig {
     @Lob
     @Column(name = "output_config")
     private String outputConfig;
+
+    /**
+     * 税务爬虫专用配置（JSON格式）
+     * 当 collectType = 'spider-tax' 时使用
+     * 格式: { "taxNo": "", "uscCode": "", "appDate": "" }
+     */
+    @Lob
+    @Column(name = "spider_config")
+    private String spiderConfig;
     
     /**
      * 最后执行时间

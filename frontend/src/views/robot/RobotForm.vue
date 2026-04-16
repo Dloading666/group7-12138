@@ -1,135 +1,192 @@
-<template>
-  <div class="robot-form-page">
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <div class="header-left">
-        <el-button link @click="handleBack">
-          <el-icon><ArrowLeft /></el-icon>
-          返回
-        </el-button>
-        <el-divider direction="vertical" />
-        <span class="page-title">{{ isEdit ? '编辑机器人' : '新增机器人' }}</span>
+﻿<template>
+  <div class="robot-form-page app-page">
+    <div class="page-header-bar">
+      <div class="page-title-block">
+        <h2>{{ isEdit ? '编辑机器人' : '新增机器人' }}</h2>
+        <p>统一维护机器人基础资料、状态与用途说明，避免表单与操作按钮重复占位。</p>
       </div>
-      <div class="header-right">
-        <el-button @click="handleBack">取消</el-button>
-        <el-button type="primary" @click="handleSubmit" :loading="submitLoading">
-          确定
-        </el-button>
+      <div class="page-header-actions">
+        <el-button @click="handleBack">返回列表</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">{{ isEdit ? '保存修改' : '创建机器人' }}</el-button>
       </div>
     </div>
 
-    <!-- 表单区域 -->
-    <div class="form-section">
-      <el-card class="form-card" v-loading="loading">
-        <el-form 
-          ref="formRef"
-          :model="robotForm" 
-          :rules="formRules" 
-          label-width="120px"
-          label-position="left"
-          class="robot-form"
-        >
-          <el-form-item label="机器人编码" prop="robotCode" required>
-            <el-input 
-              v-model="robotForm.robotCode" 
-              placeholder="请输入机器人编码"
-              :disabled="isEdit"
-            />
-          </el-form-item>
+    <div class="robot-layout" v-loading="loading">
+      <div class="robot-main-stack">
+        <div class="page-section padded">
+          <div class="section-heading compact-heading">
+            <div>
+              <h3>基础信息</h3>
+              <p>编码建议保持稳定，便于在任务调度、日志和执行记录里快速定位同一个机器人。</p>
+            </div>
+          </div>
 
-          <el-form-item label="机器人名称" prop="name" required>
-            <el-input 
-              v-model="robotForm.name" 
-              placeholder="请输入机器人名称"
-            />
-          </el-form-item>
+          <el-form ref="formRef" :model="robotForm" :rules="formRules" label-position="top" class="robot-form-grid">
+            <div class="form-grid two-columns">
+              <el-form-item label="机器人编码" prop="robotCode">
+                <el-input v-model="robotForm.robotCode" :disabled="isEdit" placeholder="例如 DC-002" />
+              </el-form-item>
 
-          <el-form-item label="类型">
-            <el-input 
-              v-model="robotForm.type" 
-              placeholder="可选：用于区分不同用途的机器人"
-            />
-          </el-form-item>
+              <el-form-item label="机器人名称" prop="name">
+                <el-input v-model="robotForm.name" placeholder="例如 MiniMax 数据采集机器人" />
+              </el-form-item>
 
-          <el-form-item label="描述">
-            <el-input 
-              v-model="robotForm.description" 
-              type="textarea"
-              :rows="4"
-              placeholder="请输入机器人描述"
-            />
-          </el-form-item>
+              <el-form-item label="机器人类型" prop="type">
+                <el-select
+                  v-model="robotForm.type"
+                  filterable
+                  allow-create
+                  default-first-option
+                  placeholder="选择或输入类型"
+                >
+                  <el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" />
+                </el-select>
+              </el-form-item>
 
-          <el-form-item label="状态">
-            <el-radio-group v-model="robotForm.status">
-              <el-radio value="online">在线</el-radio>
-              <el-radio value="offline">离线</el-radio>
-            </el-radio-group>
-          </el-form-item>
-        </el-form>
-      </el-card>
-    </div>
+              <el-form-item label="运行状态" prop="status">
+                <el-radio-group v-model="robotForm.status" class="status-radio-group">
+                  <el-radio-button label="online">在线</el-radio-button>
+                  <el-radio-button label="offline">离线</el-radio-button>
+                  <el-radio-button label="running">运行中</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+            </div>
 
-    <!-- 底部操作栏 -->
-    <div class="footer-actions">
-      <el-button @click="handleBack">取消</el-button>
-      <el-button type="primary" @click="handleSubmit" :loading="submitLoading">
-        确定
-      </el-button>
+            <el-form-item label="描述说明" prop="description">
+              <el-input
+                v-model="robotForm.description"
+                type="textarea"
+                :rows="6"
+                maxlength="300"
+                show-word-limit
+                placeholder="补充这个机器人负责什么、适合执行哪类任务、是否依赖特定环境。"
+              />
+            </el-form-item>
+          </el-form>
+        </div>
+      </div>
+
+      <div class="robot-side-stack">
+        <div class="page-section padded overview-card">
+          <div class="side-card-title">状态概览</div>
+          <div class="status-grid compact-status-grid">
+            <div class="status-metric">
+              <div class="metric-label">当前状态</div>
+              <div class="metric-value">
+                <el-tag :type="statusTagType">{{ statusLabel }}</el-tag>
+              </div>
+            </div>
+            <div class="status-metric">
+              <div class="metric-label">机器人类型</div>
+              <div class="metric-value">{{ typeLabel }}</div>
+            </div>
+          </div>
+
+          <template v-if="isEdit && robotStats">
+            <div class="mini-metrics">
+              <div>
+                <span>累计任务</span>
+                <strong>{{ robotStats.totalTasks ?? 0 }}</strong>
+              </div>
+              <div>
+                <span>成功率</span>
+                <strong>{{ formatSuccessRate(robotStats.successRate) }}</strong>
+              </div>
+              <div>
+                <span>最近执行</span>
+                <strong>{{ formatDateTime(robotStats.lastExecuteTime) }}</strong>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <ul class="hint-list compact-list">
+              <li>采集机器人建议使用 <code>data_collector</code> 类型，便于配置页筛选。</li>
+              <li>编码建议使用稳定前缀，例如 <code>DC</code>、<code>RG</code>、<code>TS</code>。</li>
+              <li>描述里写清用途，后续在任务列表里更容易判断该选哪个机器人。</li>
+            </ul>
+          </template>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getRobotById, createRobot, updateRobot } from '../../api/robot.js'
+import { createRobot, getRobotById, updateRobot } from '../../api/robot.js'
 
 const router = useRouter()
 const route = useRoute()
 const formRef = ref(null)
 const loading = ref(false)
 const submitLoading = ref(false)
+const robotStats = ref(null)
 
 const robotId = computed(() => route.params.id)
-const isEdit = computed(() => !!robotId.value)
+const isEdit = computed(() => Boolean(robotId.value))
+
+const typeOptions = [
+  { label: '数据采集', value: 'data_collector' },
+  { label: '报表生成', value: 'report_generator' },
+  { label: '任务调度', value: 'task_scheduler' },
+  { label: '消息通知', value: 'notification' },
+  { label: '文件处理', value: 'file_processor' }
+]
 
 const robotForm = reactive({
   robotCode: '',
   name: '',
-  type: '',
+  type: 'data_collector',
   description: '',
   status: 'offline'
 })
 
 const formRules = {
-  robotCode: [
-    { required: true, message: '请输入机器人编码', trigger: 'blur' }
-  ],
-  name: [
-    { required: true, message: '请输入机器人名称', trigger: 'blur' }
-  ]
+  robotCode: [{ required: true, message: '请输入机器人编码', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入机器人名称', trigger: 'blur' }],
+  type: [{ required: true, message: '请输入机器人类型', trigger: 'change' }]
 }
 
-// 加载机器人数据（编辑模式）
+const statusLabel = computed(() => {
+  const map = {
+    online: '在线',
+    offline: '离线',
+    running: '运行中'
+  }
+  return map[robotForm.status] || robotForm.status || '-'
+})
+
+const statusTagType = computed(() => {
+  const map = {
+    online: 'success',
+    offline: 'info',
+    running: 'warning'
+  }
+  return map[robotForm.status] || 'info'
+})
+
+const typeLabel = computed(() => {
+  const matched = typeOptions.find((item) => item.value === robotForm.type)
+  return matched?.label || robotForm.type || '-'
+})
+
 const loadRobotData = async () => {
-  if (!robotId.value) return
-  
+  if (!robotId.value) {
+    return
+  }
+
   loading.value = true
   try {
     const res = await getRobotById(robotId.value)
-    if (res.code === 200) {
-      const robot = res.data
-      robotForm.robotCode = robot.robotCode || ''
-      robotForm.name = robot.name || ''
-      robotForm.type = robot.type || ''
-      robotForm.description = robot.description || ''
-      robotForm.status = robot.status || 'offline'
-    } else {
-      ElMessage.error(res.message || '获取机器人信息失败')
-      handleBack()
-    }
+    const robot = res.data || {}
+    robotForm.robotCode = robot.robotCode || ''
+    robotForm.name = robot.name || ''
+    robotForm.type = robot.type || 'data_collector'
+    robotForm.description = robot.description || ''
+    robotForm.status = robot.status || 'offline'
+    robotStats.value = robot
   } catch (error) {
     console.error('加载机器人数据失败:', error)
     ElMessage.error('加载机器人数据失败')
@@ -139,39 +196,65 @@ const loadRobotData = async () => {
   }
 }
 
-// 提交表单
 const handleSubmit = async () => {
-  if (!formRef.value) return
-  
-  const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!formRef.value) {
+    return
+  }
 
-  submitLoading.value = true
   try {
-    let res
+    await formRef.value.validate()
+    submitLoading.value = true
+
+    const payload = {
+      robotCode: robotForm.robotCode.trim(),
+      name: robotForm.name.trim(),
+      type: robotForm.type?.trim(),
+      description: robotForm.description?.trim() || '',
+      status: robotForm.status
+    }
+
     if (isEdit.value) {
-      res = await updateRobot(robotId.value, robotForm)
+      await updateRobot(robotId.value, payload)
+      ElMessage.success('机器人信息已更新')
     } else {
-      res = await createRobot(robotForm)
+      await createRobot(payload)
+      ElMessage.success('机器人已创建')
     }
-    
-    if (res.code === 200) {
-      ElMessage.success(isEdit.value ? '编辑成功' : '新增成功')
-      router.push('/robot/list')
-    } else {
-      ElMessage.error(res.message || '操作失败')
-    }
+
+    router.push('/robot/list')
   } catch (error) {
-    console.error('操作失败:', error)
-    ElMessage.error('操作失败')
+    if (error) {
+      console.error('保存机器人失败:', error)
+      ElMessage.error('保存机器人失败')
+    }
   } finally {
     submitLoading.value = false
   }
 }
 
-// 返回列表
 const handleBack = () => {
   router.push('/robot/list')
+}
+
+const formatSuccessRate = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return '-'
+  }
+  const numeric = Number(value)
+  if (Number.isNaN(numeric)) {
+    return String(value)
+  }
+  if (numeric <= 1) {
+    return `${(numeric * 100).toFixed(1)}%`
+  }
+  return `${numeric.toFixed(1)}%`
+}
+
+const formatDateTime = (value) => {
+  if (!value) {
+    return '-'
+  }
+  return String(value).replace('T', ' ').slice(0, 19)
 }
 
 onMounted(() => {
@@ -181,147 +264,96 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .robot-form-page {
-  min-height: calc(100vh - 60px);
-  background: #f5f7fa;
-  padding-bottom: 70px;
+  padding: 4px;
+}
 
-  // 页面头部
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 20px;
-    background: #fff;
-    border-bottom: 1px solid #e8e8e8;
-    position: sticky;
-    top: 0;
-    z-index: 100;
+.robot-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+}
 
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+.robot-main-stack,
+.robot-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
 
-      .page-title {
-        font-size: 16px;
-        font-weight: 600;
-        color: #303133;
-      }
-    }
+.compact-heading {
+  margin-bottom: 18px;
+}
 
-    .header-right {
-      display: flex;
-      gap: 10px;
-    }
-  }
+.form-grid.two-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
 
-  // 表单区域
-  .form-section {
-    padding: 20px;
+.status-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+}
 
-    .form-card {
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-      max-width: 800px;
-    }
-  }
+.overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 
-  // 底部操作栏
-  .footer-actions {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 15px 20px;
-    background: #fff;
-    border-top: 1px solid #e8e8e8;
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    z-index: 100;
+.side-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.compact-status-grid {
+  grid-template-columns: 1fr;
+}
+
+.mini-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mini-metrics div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mini-metrics span {
+  color: var(--app-text-muted);
+}
+
+.mini-metrics strong {
+  color: var(--app-text);
+}
+
+.compact-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.8;
+  color: var(--app-text);
+}
+
+.compact-list code {
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.06);
+}
+
+@media (max-width: 1200px) {
+  .robot-layout {
+    grid-template-columns: 1fr;
   }
 }
 
-// 表单样式
-:deep(.robot-form) {
-  .el-form-item {
-    margin-bottom: 24px;
-    
-    &:last-child {
-      margin-bottom: 0;
-    }
-  }
-  
-  .el-form-item__label {
-    font-weight: 500;
-    color: #606266;
-    padding-right: 12px;
-    
-    &::before {
-      color: #f56c6c;
-      margin-right: 4px;
-    }
-  }
-  
-  .el-input__inner {
-    border-radius: 4px;
-    
-    &::placeholder {
-      color: #c0c4cc;
-    }
-  }
-  
-  .el-textarea__inner {
-    border-radius: 4px;
-    
-    &::placeholder {
-      color: #c0c4cc;
-    }
-  }
-  
-  .el-radio-group {
-    .el-radio {
-      margin-right: 24px;
-      
-      .el-radio__label {
-        color: #606266;
-      }
-      
-      &.is-checked {
-        .el-radio__inner {
-          background-color: #409eff;
-          border-color: #409eff;
-        }
-        
-        .el-radio__label {
-          color: #409eff;
-        }
-      }
-    }
-  }
-}
-
-// Element Plus 按钮样式
-:deep(.el-button) {
-  border-radius: 4px;
-  padding: 9px 20px;
-  
-  &.el-button--primary {
-    background-color: #409eff;
-    border-color: #409eff;
-    
-    &:hover {
-      background-color: #66b1ff;
-      border-color: #66b1ff;
-    }
-  }
-  
-  &:not(.el-button--primary):not(.el-button--text) {
-    &:hover {
-      color: #409eff;
-      border-color: #c6e2ff;
-      background-color: #ecf5ff;
-    }
+@media (max-width: 900px) {
+  .form-grid.two-columns {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -1,174 +1,144 @@
-<template>
-  <div class="profile-container">
-    <el-card class="profile-card">
-      <template #header>
-        <div class="card-header">
-          <span>个人中心</span>
-        </div>
-      </template>
-      
-      <div class="profile-content">
-        <!-- 头像和基本信息 -->
-        <div class="profile-header">
-          <div class="avatar-section">
-            <el-avatar :size="100" :src="userInfo.avatar" class="user-avatar">
-              <el-icon :size="50"><User /></el-icon>
-            </el-avatar>
-            <el-upload
-              class="avatar-upload"
-              action="#"
-              :show-file-list="false"
-              :auto-upload="false"
-              @change="handleAvatarChange"
-            >
-              <el-button size="small" type="primary" link>更换头像</el-button>
-            </el-upload>
-          </div>
-          
-          <div class="user-basic-info">
-            <h2 class="user-name">{{ userInfo.realName }}</h2>
-            <div class="user-role-section">
-              <el-tag 
-                :type="userInfo.role === 'ADMIN' ? 'danger' : 'primary'" 
-                size="large"
-                effect="plain"
-              >
-                {{ roleDisplayName }}
+﻿<template>
+  <div class="profile-page app-page">
+    <div class="page-header-bar">
+      <div class="page-title-block">
+        <h2>个人中心</h2>
+        <p>集中维护账号资料与安全设置，把信息展示、资料编辑和密码修改拆成更清晰的几个区域。</p>
+      </div>
+      <div class="page-header-actions">
+        <el-button @click="handleReset">重置</el-button>
+        <el-button type="warning" plain @click="showPasswordDialog = true">修改密码</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">保存资料</el-button>
+      </div>
+    </div>
+
+    <div class="profile-layout" v-loading="loading">
+      <div class="page-section padded identity-card">
+        <div class="profile-hero">
+          <el-avatar :size="96" :src="userInfo.avatar || undefined" class="profile-avatar">
+            {{ avatarFallback }}
+          </el-avatar>
+          <div class="profile-summary">
+            <h3>{{ userInfo.realName || userInfo.username || '未命名用户' }}</h3>
+            <p>@{{ userInfo.username || '-' }}</p>
+            <div class="profile-tags">
+              <el-tag :type="roleTagType" effect="plain">{{ roleLabel }}</el-tag>
+              <el-tag :type="userInfo.status === 'active' ? 'success' : 'info'" effect="plain">
+                {{ userInfo.status === 'active' ? '已启用' : '未启用' }}
               </el-tag>
             </div>
           </div>
         </div>
 
-        <!-- 详细信息表单 -->
-        <el-divider />
-        
-        <el-form
-          ref="formRef"
-          :model="userInfo"
-          :rules="rules"
-          label-width="100px"
-          class="profile-form"
-        >
-          <el-row :gutter="40">
-            <el-col :span="12">
-              <el-form-item label="用户名" prop="username">
-                <el-input v-model="userInfo.username" disabled placeholder="用户名不可修改" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="姓名" prop="realName">
-                <el-input v-model="userInfo.realName" placeholder="请输入姓名" />
-              </el-form-item>
-            </el-col>
-          </el-row>
+        <div class="identity-list">
+          <div>
+            <span>最近登录时间</span>
+            <strong>{{ formatDateTime(userInfo.lastLoginTime) }}</strong>
+          </div>
+          <div>
+            <span>最近登录 IP</span>
+            <strong>{{ userInfo.lastLoginIp || '-' }}</strong>
+          </div>
+          <div>
+            <span>账号创建时间</span>
+            <strong>{{ formatDateTime(userInfo.createTime) }}</strong>
+          </div>
+          <div>
+            <span>最近更新时间</span>
+            <strong>{{ formatDateTime(userInfo.updateTime) }}</strong>
+          </div>
+        </div>
 
-          <el-row :gutter="40">
-            <el-col :span="12">
-              <el-form-item label="邮箱" prop="email">
-                <el-input v-model="userInfo.email" placeholder="请输入邮箱" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="手机号" prop="phone">
-                <el-input v-model="userInfo.phone" placeholder="请输入手机号" />
-              </el-form-item>
-            </el-col>
-          </el-row>
-
-          <el-row :gutter="40">
-            <el-col :span="12">
-              <el-form-item label="角色">
-                <el-select v-model="userInfo.role" disabled placeholder="角色不可修改" style="width: 100%;">
-                  <el-option label="管理员" value="ADMIN" />
-                  <el-option label="普通用户" value="USER" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="状态">
-                <el-tag :type="userInfo.status === 'active' ? 'success' : 'danger'">
-                  {{ userInfo.status === 'active' ? '启用' : '禁用' }}
-                </el-tag>
-              </el-form-item>
-            </el-col>
-          </el-row>
-
-          <el-form-item>
-            <el-button type="primary" @click="handleSave" :loading="loading">
-              保存修改
-            </el-button>
-            <el-button @click="handleReset">重置</el-button>
-            <el-button type="warning" @click="showPasswordDialog = true">
-              修改密码
-            </el-button>
+        <el-form label-position="top" class="avatar-form">
+          <el-form-item label="头像地址（可选）">
+            <el-input v-model="userInfo.avatar" placeholder="https://example.com/avatar.png" />
           </el-form-item>
         </el-form>
       </div>
-    </el-card>
 
-    <!-- 修改密码弹窗 -->
-    <el-dialog
-      v-model="showPasswordDialog"
-      title="修改密码"
-      width="500px"
-      :close-on-click-modal="false"
-    >
-      <el-form
-        ref="passwordFormRef"
-        :model="passwordForm"
-        :rules="passwordRules"
-        label-width="100px"
-      >
-        <el-form-item label="原密码" prop="oldPassword">
-          <el-input
-            v-model="passwordForm.oldPassword"
-            type="password"
-            placeholder="请输入原密码"
-            show-password
-          />
+      <div class="profile-main-stack">
+        <div class="page-section padded">
+          <div class="section-heading compact-heading">
+            <div>
+              <h3>基本资料</h3>
+              <p>这里的内容会同步到本地登录信息与后端个人资料接口。</p>
+            </div>
+          </div>
+
+          <el-form ref="formRef" :model="userInfo" :rules="rules" label-position="top">
+            <div class="profile-form-grid">
+              <el-form-item label="用户名" prop="username">
+                <el-input v-model="userInfo.username" disabled />
+              </el-form-item>
+              <el-form-item label="姓名" prop="realName">
+                <el-input v-model="userInfo.realName" placeholder="请输入姓名" />
+              </el-form-item>
+              <el-form-item label="邮箱" prop="email">
+                <el-input v-model="userInfo.email" placeholder="请输入邮箱" />
+              </el-form-item>
+              <el-form-item label="手机号" prop="phone">
+                <el-input v-model="userInfo.phone" placeholder="请输入手机号" />
+              </el-form-item>
+              <el-form-item label="角色">
+                <el-input :model-value="roleLabel" disabled />
+              </el-form-item>
+              <el-form-item label="账号状态">
+                <el-input :model-value="userInfo.status === 'active' ? '已启用' : '未启用'" disabled />
+              </el-form-item>
+            </div>
+          </el-form>
+        </div>
+
+        <div class="page-section padded">
+          <div class="section-heading compact-heading security-heading">
+            <div>
+              <h3>安全设置</h3>
+              <p>修改密码后会清空当前登录态并跳转到登录页，避免旧 token 继续使用。</p>
+            </div>
+            <el-button type="warning" @click="showPasswordDialog = true">修改密码</el-button>
+          </div>
+
+          <ul class="security-list">
+            <li>密码长度建议不少于 8 位，并混合数字与字母。</li>
+            <li>如果你在多台设备上登录，修改密码后建议全部重新登录一次。</li>
+            <li>头像地址只是展示字段，不会上传到文件服务器。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <el-dialog v-model="showPasswordDialog" title="修改密码" width="520px" :close-on-click-modal="false">
+      <el-form ref="passwordFormRef" :model="passwordForm" :rules="passwordRules" label-position="top">
+        <el-form-item label="当前密码" prop="oldPassword">
+          <el-input v-model="passwordForm.oldPassword" type="password" show-password placeholder="请输入当前密码" />
         </el-form-item>
         <el-form-item label="新密码" prop="newPassword">
-          <el-input
-            v-model="passwordForm.newPassword"
-            type="password"
-            placeholder="请输入新密码"
-            show-password
-          />
+          <el-input v-model="passwordForm.newPassword" type="password" show-password placeholder="请输入新密码" />
         </el-form-item>
-        <el-form-item label="确认密码" prop="confirmPassword">
-          <el-input
-            v-model="passwordForm.confirmPassword"
-            type="password"
-            placeholder="请再次输入新密码"
-            show-password
-          />
+        <el-form-item label="确认新密码" prop="confirmPassword">
+          <el-input v-model="passwordForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showPasswordDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleChangePassword" :loading="passwordLoading">
-          确认修改
-        </el-button>
+        <el-button type="primary" :loading="passwordLoading" @click="handleChangePassword">确认修改</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { updateProfile, changePassword } from '../api/user.js'
+import { changePassword, getProfile, updateProfile } from '../api/user.js'
 
-// 表单引用
 const formRef = ref(null)
 const passwordFormRef = ref(null)
-
-// 加载状态
 const loading = ref(false)
+const saving = ref(false)
 const passwordLoading = ref(false)
 const showPasswordDialog = ref(false)
 
-// 用户信息
 const userInfo = reactive({
   id: null,
   username: '',
@@ -177,26 +147,35 @@ const userInfo = reactive({
   phone: '',
   role: 'USER',
   status: 'active',
-  avatar: ''
+  avatar: '',
+  createTime: '',
+  updateTime: '',
+  lastLoginTime: '',
+  lastLoginIp: ''
 })
 
-// 原始用户信息（用于重置）
 const originalUserInfo = ref({})
 
-// 角色显示名称
-const roleDisplayName = computed(() => {
-  const roleMap = {
-    'ADMIN': '管理员',
-    'USER': '普通用户'
-  }
-  return roleMap[userInfo.role] || '未知角色'
+const passwordForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
 })
 
-// 表单验证规则
+const avatarFallback = computed(() => (userInfo.realName || userInfo.username || 'U').slice(0, 1).toUpperCase())
+const roleLabel = computed(() => {
+  const map = {
+    ADMIN: '系统管理员',
+    USER: '普通用户'
+  }
+  return map[userInfo.role] || userInfo.role || '-'
+})
+const roleTagType = computed(() => (userInfo.role === 'ADMIN' ? 'danger' : 'primary'))
+
 const rules = {
   realName: [
     { required: true, message: '请输入姓名', trigger: 'blur' },
-    { min: 2, max: 20, message: '姓名长度在 2 到 20 个字符', trigger: 'blur' }
+    { min: 2, max: 20, message: '姓名长度需在 2 到 20 个字符之间', trigger: 'blur' }
   ],
   email: [
     { required: true, message: '请输入邮箱', trigger: 'blur' },
@@ -208,29 +187,19 @@ const rules = {
   ]
 }
 
-// 修改密码表单
-const passwordForm = reactive({
-  oldPassword: '',
-  newPassword: '',
-  confirmPassword: ''
-})
-
-// 密码验证规则
 const validateConfirmPassword = (rule, value, callback) => {
   if (value !== passwordForm.newPassword) {
-    callback(new Error('两次输入的密码不一致'))
+    callback(new Error('两次输入的新密码不一致'))
   } else {
     callback()
   }
 }
 
 const passwordRules = {
-  oldPassword: [
-    { required: true, message: '请输入原密码', trigger: 'blur' }
-  ],
+  oldPassword: [{ required: true, message: '请输入当前密码', trigger: 'blur' }],
   newPassword: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 6, max: 20, message: '密码长度在 6 到 20 个字符', trigger: 'blur' }
+    { min: 6, max: 20, message: '密码长度需在 6 到 20 个字符之间', trigger: 'blur' }
   ],
   confirmPassword: [
     { required: true, message: '请再次输入新密码', trigger: 'blur' },
@@ -238,173 +207,246 @@ const passwordRules = {
   ]
 }
 
-// 加载用户信息
-const loadUserInfo = () => {
-  const userInfoStr = localStorage.getItem('userInfo')
-  if (userInfoStr) {
-    const data = JSON.parse(userInfoStr)
-    userInfo.id = data.id
-    userInfo.username = data.username
-    userInfo.realName = data.realName || ''
-    userInfo.email = data.email || ''
-    userInfo.phone = data.phone || ''
-    userInfo.role = data.role || 'USER'
-    userInfo.status = data.status || 'active'
-    userInfo.avatar = data.avatar || 'https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png'
-    
-    // 保存原始数据
-    originalUserInfo.value = { ...userInfo }
+const applyUserData = (data = {}) => {
+  userInfo.id = data.id ?? null
+  userInfo.username = data.username || ''
+  userInfo.realName = data.realName || ''
+  userInfo.email = data.email || ''
+  userInfo.phone = data.phone || ''
+  userInfo.role = data.role || 'USER'
+  userInfo.status = data.status || 'active'
+  userInfo.avatar = data.avatar || ''
+  userInfo.createTime = data.createTime || ''
+  userInfo.updateTime = data.updateTime || ''
+  userInfo.lastLoginTime = data.lastLoginTime || ''
+  userInfo.lastLoginIp = data.lastLoginIp || ''
+}
+
+const snapshotOriginal = () => {
+  originalUserInfo.value = { ...userInfo }
+}
+
+const syncLocalUser = () => {
+  try {
+    const local = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    const next = {
+      ...local,
+      id: userInfo.id,
+      username: userInfo.username,
+      realName: userInfo.realName,
+      email: userInfo.email,
+      phone: userInfo.phone,
+      role: userInfo.role,
+      status: userInfo.status,
+      avatar: userInfo.avatar
+    }
+    localStorage.setItem('userInfo', JSON.stringify(next))
+  } catch (error) {
+    console.error('同步本地用户信息失败:', error)
   }
 }
 
-// 更换头像
-const handleAvatarChange = (file) => {
-  // 这里可以实现头像上传逻辑
-  ElMessage.info('头像上传功能开发中')
+const loadProfileData = async () => {
+  loading.value = true
+  try {
+    const res = await getProfile()
+    applyUserData(res.data || {})
+    snapshotOriginal()
+    syncLocalUser()
+  } catch (error) {
+    console.error('加载个人资料失败:', error)
+    const local = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    applyUserData(local)
+    snapshotOriginal()
+  } finally {
+    loading.value = false
+  }
 }
 
-// 保存修改
 const handleSave = async () => {
-  if (!formRef.value) return
-  
-  await formRef.value.validate(async (valid) => {
-    if (valid) {
-      loading.value = true
-      try {
-        await updateProfile({
-          realName: userInfo.realName,
-          email: userInfo.email,
-          phone: userInfo.phone
-        })
-        
-        // 更新本地存储
-        const userInfoStr = localStorage.getItem('userInfo')
-        if (userInfoStr) {
-          const data = JSON.parse(userInfoStr)
-          data.realName = userInfo.realName
-          data.email = userInfo.email
-          data.phone = userInfo.phone
-          localStorage.setItem('userInfo', JSON.stringify(data))
-        }
-        
-        // 更新原始数据
-        originalUserInfo.value = { ...userInfo }
-        
-        ElMessage.success('保存成功')
-      } catch (error) {
-        ElMessage.error(error.message || '保存失败')
-      } finally {
-        loading.value = false
-      }
+  if (!formRef.value) {
+    return
+  }
+
+  try {
+    await formRef.value.validate()
+    saving.value = true
+    const res = await updateProfile({
+      realName: userInfo.realName,
+      email: userInfo.email,
+      phone: userInfo.phone,
+      avatar: userInfo.avatar || null
+    })
+
+    applyUserData(res.data || { ...userInfo })
+    snapshotOriginal()
+    syncLocalUser()
+    ElMessage.success('个人资料已保存')
+  } catch (error) {
+    if (error) {
+      console.error('保存个人资料失败:', error)
+      ElMessage.error('保存个人资料失败')
     }
-  })
+  } finally {
+    saving.value = false
+  }
 }
 
-// 重置表单
 const handleReset = () => {
-  userInfo.realName = originalUserInfo.value.realName
-  userInfo.email = originalUserInfo.value.email
-  userInfo.phone = originalUserInfo.value.phone
+  applyUserData(originalUserInfo.value)
 }
 
-// 修改密码
 const handleChangePassword = async () => {
-  if (!passwordFormRef.value) return
-  
-  await passwordFormRef.value.validate(async (valid) => {
-    if (valid) {
-      passwordLoading.value = true
-      try {
-        await changePassword({
-          oldPassword: passwordForm.oldPassword,
-          newPassword: passwordForm.newPassword
-        })
-        
-        ElMessage.success('密码修改成功，请重新登录')
-        showPasswordDialog.value = false
-        
-        // 清空密码表单
-        passwordForm.oldPassword = ''
-        passwordForm.newPassword = ''
-        passwordForm.confirmPassword = ''
-        
-        // 3秒后跳转登录页
-        setTimeout(() => {
-          localStorage.removeItem('token')
-          localStorage.removeItem('userInfo')
-          window.location.href = '/login'
-        }, 1500)
-      } catch (error) {
-        ElMessage.error(error.message || '密码修改失败')
-      } finally {
-        passwordLoading.value = false
-      }
+  if (!passwordFormRef.value) {
+    return
+  }
+
+  try {
+    await passwordFormRef.value.validate()
+    passwordLoading.value = true
+    await changePassword({
+      oldPassword: passwordForm.oldPassword,
+      newPassword: passwordForm.newPassword
+    })
+
+    ElMessage.success('密码修改成功，即将重新登录')
+    showPasswordDialog.value = false
+    passwordForm.oldPassword = ''
+    passwordForm.newPassword = ''
+    passwordForm.confirmPassword = ''
+
+    setTimeout(() => {
+      localStorage.removeItem('token')
+      localStorage.removeItem('userInfo')
+      window.location.href = '/login'
+    }, 1200)
+  } catch (error) {
+    if (error) {
+      console.error('修改密码失败:', error)
+      ElMessage.error('修改密码失败')
     }
-  })
+  } finally {
+    passwordLoading.value = false
+  }
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  return String(value).replace('T', ' ').slice(0, 19)
 }
 
 onMounted(() => {
-  loadUserInfo()
+  loadProfileData()
 })
 </script>
 
 <style scoped lang="scss">
-.profile-container {
-  padding: 20px;
+.profile-page {
+  padding: 4px;
+}
 
-  .profile-card {
-    max-width: 900px;
-    margin: 0 auto;
+.profile-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 18px;
+}
 
-    .card-header {
-      font-size: 18px;
-      font-weight: 600;
-    }
+.profile-main-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.identity-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-avatar {
+  color: #fff;
+  background: linear-gradient(135deg, #0f766e, #2563eb);
+  box-shadow: 0 16px 30px rgba(37, 99, 235, 0.2);
+}
+
+.profile-summary h3 {
+  margin: 0 0 6px;
+  font-size: 24px;
+}
+
+.profile-summary p {
+  margin: 0;
+  color: var(--app-text-muted);
+}
+
+.profile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.identity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.identity-list div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.identity-list span {
+  color: var(--app-text-muted);
+  font-size: 13px;
+}
+
+.identity-list strong {
+  color: var(--app-text);
+  word-break: break-all;
+}
+
+.profile-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.compact-heading {
+  margin-bottom: 18px;
+}
+
+.security-heading {
+  align-items: center;
+}
+
+.security-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.9;
+  color: var(--app-text);
+}
+
+@media (max-width: 1200px) {
+  .profile-layout {
+    grid-template-columns: 1fr;
   }
+}
 
-  .profile-content {
-    .profile-header {
-      display: flex;
-      align-items: center;
-      padding: 20px 0;
-
-      .avatar-section {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin-right: 40px;
-
-        .user-avatar {
-          border: 3px solid #e4e7ed;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-
-        .avatar-upload {
-          margin-top: 12px;
-        }
-      }
-
-      .user-basic-info {
-        flex: 1;
-
-        .user-name {
-          margin: 0 0 12px 0;
-          font-size: 24px;
-          font-weight: 600;
-          color: #303133;
-        }
-
-        .user-role-section {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-      }
-    }
-
-    .profile-form {
-      padding: 20px 0;
-    }
+@media (max-width: 900px) {
+  .profile-form-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

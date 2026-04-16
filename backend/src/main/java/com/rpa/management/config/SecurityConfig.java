@@ -59,10 +59,14 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/auth/login",
                                 "/auth/register",
+                                "/auth/health",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/h2-console/**",
-                                "/test/**"
+                                "/test/**",
+                                "/spider/task/callback",
+                                "/crawl/callback",
+                                "/agent/callback"   // Python Agent 执行结果回调，无需 JWT
                         ).permitAll()
                         
                         // 管理员接口 - 仅管理员可访问

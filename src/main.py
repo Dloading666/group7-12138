@@ -4,10 +4,12 @@ import json
 import threading
 import traceback
 import logging
+import uuid
 from typing import Any, Dict, Iterable, AsyncIterable, AsyncGenerator, Optional
 import cozeloop
 import uvicorn
 import time
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from langchain_core.runnables import RunnableConfig
@@ -462,6 +464,73 @@ async def openai_chat_completions(request: Request):
         raise HTTPException(status_code=400, detail="Invalid JSON format")
     finally:
         cozeloop.flush()
+
+
+@app.post("/submit")
+async def http_submit(request: Request) -> Dict[str, Any]:
+    """
+    非阻塞任务提交端点（供 Spring Boot AgentApiClient 使用）。
+
+    接收格式：
+      { "taskId": "TASK-xxx", "workflowId": 1, "callbackUrl": "http://...", "params": {...} }
+
+    立即返回 runId，后台异步执行 RPA 工作流，完成后 POST callbackUrl 通知 Spring Boot。
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    task_id: str = payload.get("taskId", "")
+    callback_url: str = payload.get("callbackUrl", "")
+    run_id: str = str(uuid.uuid4())
+
+    logger.info(f"[submit] 接收任务: taskId={task_id}, runId={run_id}, callbackUrl={callback_url}")
+
+    # ── 后台异步运行工作流，立即返回 ────────────────────────────────────
+    async def _run_workflow():
+        from graphs.graph import graph as rpa_graph
+        initial_state = {
+            "task_id": task_id,
+            "workflow_id": payload.get("workflowId"),
+            "callback_url": callback_url,
+            "params": payload.get("params") or {},
+            "run_id": run_id,
+            # 以下字段将由各节点填充
+            "raw_content": "",
+            "analysis": "",
+            "summary": "",
+            "key_points": [],
+            "status": "",
+            "error_message": "",
+            "result": {},
+        }
+        try:
+            logger.info(f"[submit] 工作流开始执行: taskId={task_id}")
+            await rpa_graph.ainvoke(initial_state)
+            logger.info(f"[submit] 工作流执行完成: taskId={task_id}")
+        except Exception as ex:
+            # 兜底：send_callback 节点本身出错时，直接发失败回调
+            logger.error(f"[submit] 工作流异常: taskId={task_id}, error={ex}", exc_info=True)
+            if callback_url:
+                try:
+                    async with httpx.AsyncClient(timeout=10) as client:
+                        await client.post(callback_url, json={
+                            "taskId": task_id,
+                            "runId": run_id,
+                            "status": "failed",
+                            "errorMessage": f"Agent 内部异常：{ex}",
+                        })
+                except Exception as cb_ex:
+                    logger.error(f"[submit] 兜底回调也失败: {cb_ex}")
+
+    asyncio.create_task(_run_workflow())
+
+    return {
+        "runId": run_id,
+        "status": "accepted",
+        "message": f"任务 {task_id} 已接受，正在执行中",
+    }
 
 
 @app.get("/health")

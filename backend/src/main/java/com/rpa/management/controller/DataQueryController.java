@@ -1,14 +1,19 @@
 package com.rpa.management.controller;
 
 import com.rpa.management.dto.ApiResponse;
+import com.rpa.management.dto.CrawlResultDTO;
+import com.rpa.management.repository.TaskRepository;
+import com.rpa.management.service.CrawlResultService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -16,75 +21,141 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 数据查询控制器 (Mock)
+ * 数据查询接口，面向真实网站采集结果
  */
-@Slf4j
-@Tag(name = "数据查询", description = "数据查询接口")
 @RestController
+@RequiredArgsConstructor
 @RequestMapping("/data")
+@Tag(name = "数据查询", description = "真实网站采集结果查询")
 public class DataQueryController {
 
-    @Operation(summary = "分页查询数据", description = "分页查询业务数据列表")
+    private final CrawlResultService crawlResultService;
+    private final TaskRepository taskRepository;
+
     @GetMapping("/query")
-    public ApiResponse<Page<Map<String, Object>>> queryData(
+    @Operation(summary = "分页查询真实网站采集结果")
+    public ApiResponse<Page<CrawlResultDTO>> queryData(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String taskId,
-            @RequestParam(required = false) String taxAreaId,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
-        
-        List<Map<String, Object>> mockList = new ArrayList<>();
-        
-        // 模拟几条数据以供展示
-        Map<String, Object> data1 = new HashMap<>();
-        data1.put("id", 1L);
-        data1.put("taskId", "T20240412001");
-        data1.put("taxId", "91110000123456789A");
-        data1.put("companyName", "某某科技有限公司");
-        data1.put("taxAreaId", "A100");
-        data1.put("status", "completed");
-        data1.put("createTime", LocalDateTime.now().minusDays(1).toString());
-        data1.put("dataContent", "{\"totalTax\": \"1500.00\", \"recordDate\": \"2024-04-11\"}");
-        mockList.add(data1);
+        LocalDateTime startDateTime = parseStart(startDate);
+        LocalDateTime endDateTime = parseEnd(endDate);
+        return ApiResponse.success(
+                crawlResultService.getResults(keyword, taskId, status, startDateTime, endDateTime, page, size)
+        );
+    }
 
-        Map<String, Object> data2 = new HashMap<>();
-        data2.put("id", 2L);
-        data2.put("taskId", "T20240412002");
-        data2.put("taxId", "91110000987654321B");
-        data2.put("companyName", "测试企业管理有限公司");
-        data2.put("taxAreaId", "A101");
-        data2.put("status", "running");
-        data2.put("createTime", LocalDateTime.now().toString());
-        data2.put("dataContent", "{\"totalTax\": \"0.00\", \"recordDate\": \"2024-04-12\"}");
-        mockList.add(data2);
-        
-        // 如果有关键字搜索，简单过滤一下
-        if (keyword != null && !keyword.isEmpty()) {
-            mockList.removeIf(item -> !String.valueOf(item.get("companyName")).contains(keyword) 
-                    && !String.valueOf(item.get("taxId")).contains(keyword));
+    /**
+     * 任务状态分布统计
+     * 返回：{ pending: N, running: N, completed: N, failed: N, total: N }
+     */
+    @GetMapping("/stats/status")
+    @Operation(summary = "任务状态统计")
+    public ApiResponse<Map<String, Long>> getTaskStatusStats() {
+        Map<String, Long> stats = new HashMap<>();
+        stats.put("total", taskRepository.countAll());
+        stats.put("running", taskRepository.countRunning());
+        stats.put("completed", taskRepository.countCompleted());
+        stats.put("failed", taskRepository.countFailed());
+        long pending = stats.get("total") - stats.get("running") - stats.get("completed") - stats.get("failed");
+        stats.put("pending", Math.max(0, pending));
+        return ApiResponse.success(stats);
+    }
+
+    /**
+     * 任务类型分布统计
+     * 返回：[ { type: "data-collection", count: N }, ... ]
+     */
+    @GetMapping("/stats/type")
+    @Operation(summary = "任务类型统计")
+    public ApiResponse<List<Map<String, Object>>> getTaskTypeStats() {
+        List<Object[]> rows = taskRepository.findAll().stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        t -> t.getType() != null ? t.getType() : "default",
+                        java.util.stream.Collectors.counting()
+                ))
+                .entrySet().stream()
+                .map(e -> new Object[]{e.getKey(), e.getValue()})
+                .collect(java.util.stream.Collectors.toList());
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Object[] row : rows) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("type", row[0]);
+            item.put("count", row[1]);
+            result.add(item);
         }
+        return ApiResponse.success(result);
+    }
 
-        int total = mockList.size();
-        
-        // 安全处理page参数，防止page < 1导致PageRequest.of报错
-        int safePage = Math.max(1, page);
-        int pageIndex = safePage - 1;
-        int safeSize = Math.max(1, size);
-        
-        int startIndex = pageIndex * safeSize;
-        int endIndex = Math.min(startIndex + safeSize, total);
-        
-        List<Map<String, Object>> pageData;
-        if (startIndex < total) {
-            pageData = mockList.subList(startIndex, endIndex);
-        } else {
-            pageData = new ArrayList<>();
+    /**
+     * 近 N 天任务趋势（按天统计任务数）
+     */
+    @GetMapping("/stats/trend")
+    @Operation(summary = "任务趋势统计")
+    public ApiResponse<List<Map<String, Object>>> getTaskTrend(
+            @RequestParam(defaultValue = "7") int days) {
+        LocalDateTime start = LocalDate.now().minusDays(days - 1).atStartOfDay();
+        Map<String, List<com.rpa.management.entity.Task>> grouped = taskRepository.findAll().stream()
+                .filter(t -> t.getCreateTime() != null && !t.getCreateTime().isBefore(start))
+                .collect(java.util.stream.Collectors.groupingBy(
+                        t -> t.getCreateTime().toLocalDate().toString()
+                ));
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int i = days - 1; i >= 0; i--) {
+            String date = LocalDate.now().minusDays(i).toString();
+            List<com.rpa.management.entity.Task> tasks = grouped.getOrDefault(date, List.of());
+            Map<String, Object> item = new HashMap<>();
+            item.put("date", date);
+            item.put("count", (long) tasks.size());
+            item.put("total", (long) tasks.size());
+            item.put("completed", tasks.stream().filter(t -> "completed".equals(t.getStatus())).count());
+            item.put("failed", tasks.stream().filter(t -> "failed".equals(t.getStatus())).count());
+            result.add(item);
         }
+        return ApiResponse.success(result);
+    }
 
-        Page<Map<String, Object>> pageResult = new PageImpl<>(pageData, PageRequest.of(pageIndex, safeSize), total);
-        return ApiResponse.success(pageResult);
+    /**
+     * 概览统计（任务总数、成功率、机器人数等）
+     */
+    @GetMapping("/stats/overview")
+    @Operation(summary = "系统概览统计")
+    public ApiResponse<Map<String, Object>> getOverviewStats() {
+        long total = taskRepository.countAll();
+        long completed = taskRepository.countCompleted();
+        long failed = taskRepository.countFailed();
+        long running = taskRepository.countRunning();
+
+        double successRate = total > 0
+                ? Math.round((double) completed / total * 10000.0) / 100.0
+                : 0.0;
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalTasks", total);
+        stats.put("completedTasks", completed);
+        stats.put("failedTasks", failed);
+        stats.put("runningTasks", running);
+        stats.put("successRate", successRate);
+        return ApiResponse.success(stats);
+    }
+
+    private LocalDateTime parseStart(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return LocalDateTime.parse(value + "T00:00:00");
+    }
+
+    private LocalDateTime parseEnd(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return LocalDateTime.parse(value + "T23:59:59");
     }
 }

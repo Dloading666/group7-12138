@@ -1,98 +1,94 @@
 import request from '../utils/request'
 
-/**
- * 任务管理API
- */
-
-// 获取任务列表（分页）
-export function getTaskList(params) {
+export function getTaskList(params, config = {}) {
   return request({
     url: '/tasks',
     method: 'get',
-    params
+    params,
+    ...config
   })
 }
 
-// 获取所有任务
-export function getAllTasks() {
+export function getAllTasks(config = {}) {
   return request({
     url: '/tasks/all',
-    method: 'get'
+    method: 'get',
+    ...config
   })
 }
 
-// 获取任务详情
-export function getTaskDetail(id) {
+export function getTaskDetail(id, config = {}) {
   return request({
     url: `/tasks/${id}`,
-    method: 'get'
+    method: 'get',
+    ...config
   })
 }
 
-// 创建任务
-export function createTask(data) {
+export function createTask(data, config = {}) {
   return request({
     url: '/tasks',
     method: 'post',
-    data
+    data,
+    ...config
   })
 }
 
-// 更新任务
-export function updateTask(data) {
+export function updateTask(data, config = {}) {
   return request({
     url: `/tasks/${data.id}`,
     method: 'put',
-    data
+    data,
+    ...config
   })
 }
 
-// 删除任务
-export function deleteTask(id) {
+export function deleteTask(id, config = {}) {
   return request({
     url: `/tasks/${id}`,
-    method: 'delete'
+    method: 'delete',
+    ...config
   })
 }
 
-// 批量删除任务
-export function batchDeleteTasks(ids) {
+export function batchDeleteTasks(ids, config = {}) {
   return request({
     url: '/tasks/batch',
     method: 'delete',
-    data: ids
+    data: ids,
+    ...config
   })
 }
 
-// 启动任务
-export function startTask(id) {
+export function startTask(id, config = {}) {
   return request({
     url: `/tasks/${id}/start`,
-    method: 'post'
+    method: 'post',
+    ...config
   })
 }
 
-// 停止任务
-export function stopTask(id) {
+export function stopTask(id, config = {}) {
   return request({
     url: `/tasks/${id}/stop`,
-    method: 'post'
+    method: 'post',
+    ...config
   })
 }
 
-// 更新任务进度
-export function updateTaskProgress(id, progress) {
+export function updateTaskProgress(id, progress, config = {}) {
   return request({
     url: `/tasks/${id}/progress`,
     method: 'put',
-    params: { progress }
+    params: { progress },
+    ...config
   })
 }
 
-// 获取任务统计
-export function getTaskStats() {
+export function getTaskStats(config = {}) {
   return request({
     url: '/tasks/stats',
-    method: 'get'
+    method: 'get',
+    ...config
   })
 }
