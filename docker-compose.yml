@@ -1,16 +1,14 @@
+name: project-gl
+
 services:
   mysql:
     image: mysql:8.0
     container_name: rpa-mysql
     restart: unless-stopped
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --default-authentication-plugin=mysql_native_password
     environment:
+      TZ: Asia/Shanghai
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
       MYSQL_DATABASE: management_system
-      TZ: Asia/Shanghai
     volumes:
       - mysql_data:/var/lib/mysql
       - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -18,98 +16,123 @@ services:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
       interval: 10s
       timeout: 5s
-      retries: 10
       start_period: 30s
+      retries: 10
+    networks:
+      rpa-network:
+        aliases:
+          - mysql
 
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: rpa-backend
+  agent:
+    image: project-gl-agent:latest
+    container_name: rpa-agent
     restart: unless-stopped
     environment:
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_NAME: management_system
-      DB_USERNAME: root
-      DB_PASSWORD: ${DB_PASSWORD:-123456}
-      JWT_SECRET: ${JWT_SECRET:-change-this-secret-in-production}
-      SPIDER_BASE_URL: http://spider:8081
-      AGENT_BASE_URL: http://agent:5000
-      BACKEND_CALLBACK_BASE: http://backend:8080
       TZ: Asia/Shanghai
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-contract-gemma4:latest}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-180}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "${BACKEND_PORT:-9080}:8080"
-    depends_on:
-      mysql:
-        condition: service_healthy
+      - "5000:5000"
+    volumes:
+      - agent_data:/app/storage
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/auth/health >/dev/null 2>&1 || exit 1"]
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3).read()
       interval: 15s
       timeout: 5s
+      start_period: 30s
       retries: 5
-      start_period: 60s
+    networks:
+      rpa-network:
+        aliases:
+          - agent
 
   spider:
-    build:
-      context: ./spider/spider_exc
-      dockerfile: Dockerfile
-      args:
-        PLAYWRIGHT_BASE_IMAGE: ${SPIDER_PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright/java:v1.40.0-jammy}
+    image: project-gl-spider:latest
     container_name: rpa-spider
     restart: unless-stopped
     environment:
+      TZ: Asia/Shanghai
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: spider_db
       DB_USERNAME: root
       DB_PASSWORD: ${DB_PASSWORD:-123456}
-      TZ: Asia/Shanghai
     ports:
-      - "${SPIDER_PORT:-9081}:8081"
+      - "9081:8081"
     depends_on:
       mysql:
         condition: service_healthy
-    shm_size: "2gb"
+    networks:
+      rpa-network:
+        aliases:
+          - spider
 
-  agent:
-    build:
-      context: ./src
-      dockerfile: Dockerfile
-    container_name: rpa-agent
+  backend:
+    image: project-gl-backend:latest
+    container_name: rpa-backend
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-your-api-key-here}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: management_system
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD:-123456}
+      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-random-256-bit-secret-key-in-production}
+      SPIDER_BASE_URL: http://spider:8081
+      AGENT_BASE_URL: http://agent:5000
+      BACKEND_CALLBACK_BASE: http://backend:8080
     ports:
-      - "${AGENT_PORT:-5000}:5000"
-    volumes:
-      - agent_data:/app/storage
+      - "9080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      agent:
+        condition: service_healthy
+      spider:
+        condition: service_started
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3).read()"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/auth/health >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 5s
+      start_period: 60s
       retries: 5
-      start_period: 30s
+    networks:
+      rpa-network:
+        aliases:
+          - backend
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: project-gl-frontend:latest
     container_name: rpa-frontend
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "80:80"
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      rpa-network:
+        aliases:
+          - frontend
 
 volumes:
   mysql_data:
+    name: project-gl_mysql_data
   agent_data:
+    name: project-gl_agent_data
 
 networks:
-  default:
+  rpa-network:
     name: rpa-network

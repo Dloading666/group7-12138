@@ -177,17 +177,28 @@ const router = createRouter({
   routes
 })
 
-const checkPermission = (permission) => {
-  const permissionsStr = localStorage.getItem('userPermissions')
-  if (!permissionsStr) return false
-
-  const userPermissions = JSON.parse(permissionsStr)
-  const userInfoStr = localStorage.getItem('userInfo')
-  let isAdmin = false
-  if (userInfoStr) {
-    const userInfo = JSON.parse(userInfoStr)
-    isAdmin = userInfo.role === 'ADMIN'
+const parseLocalJson = (key, fallback) => {
+  const raw = localStorage.getItem(key)
+  if (!raw) {
+    return fallback
   }
+
+  try {
+    return JSON.parse(raw)
+  } catch (error) {
+    localStorage.removeItem(key)
+    return fallback
+  }
+}
+
+const checkPermission = (permission) => {
+  const userPermissions = parseLocalJson('userPermissions', [])
+  if (!Array.isArray(userPermissions)) {
+    return false
+  }
+
+  const userInfo = parseLocalJson('userInfo', {})
+  const isAdmin = userInfo?.role === 'ADMIN'
   if (isAdmin) return true
   return userPermissions.includes(permission)
 }
@@ -197,16 +208,17 @@ router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
 
   if (to.path === '/login') {
-    if (token) {
-      next('/')
-    } else {
-      next()
-    }
+    next()
     return
   }
 
   if (!token) {
-    next('/login')
+    next({
+      path: '/login',
+      query: {
+        redirect: to.fullPath
+      }
+    })
     return
   }
 
