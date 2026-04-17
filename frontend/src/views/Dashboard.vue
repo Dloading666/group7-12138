@@ -243,10 +243,21 @@ const permissionNotice = computed(() => {
 const loadDashboardData = async () => {
   loading.value = true
   try {
+    const taskStatsFallback = { data: { total: 0, running: 0, completed: 0, pending: 0, failed: 0, avgDuration: 0 } }
+    const robotStatsFallback = { data: { total: 0, online: 0, running: 0 } }
+    const taskListFallback = { data: { content: [] } }
+    const canLoadTaskOverview = canViewTaskList.value || canViewStatisticsReport.value
+
     const [taskStatsRes, robotStatsRes, tasksRes] = await Promise.all([
-      getTaskStats().catch(() => ({ data: { total: 0, running: 0, completed: 0, pending: 0, failed: 0, avgDuration: 0 } })),
-      getRobotStats().catch(() => ({ data: { total: 0, online: 0, running: 0 } })),
-      getTaskList({ page: 1, size: 50 }).catch(() => ({ data: { content: [] } }))
+      canLoadTaskOverview
+        ? getTaskStats({ silent: true }).catch(() => taskStatsFallback)
+        : Promise.resolve(taskStatsFallback),
+      canViewRobotList.value
+        ? getRobotStats({ silent: true }).catch(() => robotStatsFallback)
+        : Promise.resolve(robotStatsFallback),
+      canViewTaskList.value
+        ? getTaskList({ page: 1, size: 50 }, { silent: true }).catch(() => taskListFallback)
+        : Promise.resolve(taskListFallback)
     ])
 
     const taskStats = taskStatsRes.data || {}

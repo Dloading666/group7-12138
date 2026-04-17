@@ -125,7 +125,8 @@ public class AgentApiClient {
         Map<String, Object> payload = new HashMap<>();
         payload.put("model", "gpt-4o-mini");
         payload.put("messages", messages);
-        payload.put("temperature", 0.3);
+        payload.put("temperature", 0.1);
+        payload.put("max_tokens", 128);
 
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(

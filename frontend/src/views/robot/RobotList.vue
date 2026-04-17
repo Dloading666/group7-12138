@@ -85,7 +85,7 @@
         </el-table-column>
         <el-table-column prop="lastHeartbeat" label="最后心跳" width="160">
           <template #default="{ row }">
-            {{ row.lastHeartbeat ? formatDateTime(row.lastHeartbeat) : '-' }}
+            {{ getLastHeartbeatText(row) }}
           </template>
         </el-table-column>
         <el-table-column prop="updateTime" label="更新时间" width="180">
@@ -217,7 +217,10 @@ const loadRobotList = async () => {
   try {
     const res = await getAllRobots()
     if (res.code === 200) {
-      let data = res.data || []
+      let data = (res.data || []).map((item) => ({
+        ...item,
+        lastHeartbeat: item?.lastHeartbeat || item?.updateTime || item?.createTime || null
+      }))
 
       if (searchForm.value.name) {
         data = data.filter((item) => item.name && item.name.toLowerCase().includes(searchForm.value.name.toLowerCase()))
@@ -403,6 +406,11 @@ const formatDateTime = (dateStr) => {
     return '-'
   }
   return String(dateStr).replace('T', ' ').slice(0, 19)
+}
+
+const getLastHeartbeatText = (row) => {
+  const heartbeatTime = row?.lastHeartbeat || row?.updateTime || row?.createTime
+  return formatDateTime(heartbeatTime)
 }
 
 onMounted(() => {

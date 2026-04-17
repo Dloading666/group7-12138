@@ -36,7 +36,7 @@
             <span>任务管理</span>
           </template>
           <el-menu-item index="/task/list" v-if="hasPermission('task:list')">任务列表</el-menu-item>
-          <el-menu-item index="/task/ai" v-if="hasPermission('task:list')">AI分析</el-menu-item>
+          <el-menu-item index="/task/ai" v-if="hasPermission('task:list')">AI 分析</el-menu-item>
           <el-menu-item index="/task/history" v-if="hasPermission('task:history')">任务历史</el-menu-item>
         </el-sub-menu>
 
@@ -119,7 +119,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, provide, ref } from 'vue'
+import { computed, provide, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -180,16 +180,32 @@ provide('hasPermission', hasPermission)
 const loadUserInfo = () => {
   const userInfoStr = localStorage.getItem('userInfo')
   if (userInfoStr) {
-    const userInfo = JSON.parse(userInfoStr)
-    username.value = userInfo.realName || userInfo.username || '用户'
-    userRole.value = userInfo.role || 'USER'
-    roleDisplayName.value = userInfo.roleDisplayName || getRoleDisplayName(userInfo.role || 'USER')
-    userAvatar.value = userInfo.avatar || userAvatar.value
+    try {
+      const userInfo = JSON.parse(userInfoStr)
+      username.value = userInfo.realName || userInfo.username || '用户'
+      userRole.value = userInfo.role || 'USER'
+      roleDisplayName.value = userInfo.roleDisplayName || getRoleDisplayName(userInfo.role || 'USER')
+      userAvatar.value = userInfo.avatar || userAvatar.value
+    } catch (error) {
+      localStorage.removeItem('userInfo')
+    }
   }
 
   const permissionsStr = localStorage.getItem('userPermissions')
-  userPermissions.value = permissionsStr ? JSON.parse(permissionsStr) : []
+  if (!permissionsStr) {
+    userPermissions.value = []
+    return
+  }
+
+  try {
+    userPermissions.value = JSON.parse(permissionsStr)
+  } catch (error) {
+    localStorage.removeItem('userPermissions')
+    userPermissions.value = []
+  }
 }
+
+loadUserInfo()
 
 const toggleCollapse = () => {
   isCollapse.value = !isCollapse.value
@@ -220,10 +236,6 @@ const handleLogout = () => {
       })
   }).catch(() => {})
 }
-
-onMounted(() => {
-  loadUserInfo()
-})
 </script>
 
 <style scoped lang="scss">

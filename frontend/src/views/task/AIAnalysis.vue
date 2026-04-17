@@ -233,7 +233,7 @@
               type="primary"
               :disabled="!canAsk || !hasQuestion || asking"
               :loading="asking"
-              @click="handleAsk"
+              @click="handleAskStream"
             >
               <el-icon v-if="!asking" class="send-button-icon"><Promotion /></el-icon>
             </el-button>
@@ -251,7 +251,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, DocumentAdd, Promotion, RefreshRight, Tickets } from '@element-plus/icons-vue'
-import { createAiAnalysisTask, getAiAnalysisMessages, sendAiAnalysisMessage } from '../../api/aiAnalysis.js'
+import {
+  createAiAnalysisTask,
+  getAiAnalysisMessages,
+  sendAiAnalysisMessage,
+  streamAiAnalysisMessage
+} from '../../api/aiAnalysis.js'
 import { getCrawlResultDetail, getCrawlResultList } from '../../api/crawl.js'
 import { getAllRobots } from '../../api/robot.js'
 import { getTaskDetail, getTaskList, startTask } from '../../api/task.js'
@@ -273,6 +278,7 @@ const robotOptions = ref([])
 const aiTasks = ref([])
 const messages = ref([])
 const currentTask = ref(null)
+const currentTaskSource = ref(null)
 const selectedSourcePreview = ref(null)
 const selectedTaskId = ref(null)
 const question = ref('')
@@ -305,6 +311,124 @@ const canAsk = computed(() => currentTask.value?.status === 'completed')
 const hasQuestion = computed(() => question.value.trim().length > 0)
 
 let pollTimer = null
+let streamAbortController = null
+let scrollFrame = null
+
+const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
+
+const buildLocalMessageKey = (taskId) => `ai-analysis-stream-cache:${taskId}`
+
+const buildMessageFingerprint = (message) => {
+  return `${message?.role || 'unknown'}::${String(message?.content || '').trim()}`
+}
+
+const normalizeLocalMessage = (message, index = 0) => ({
+  id: message?.id || `local-${Date.now()}-${index}`,
+  analysisTaskId: message?.analysisTaskId || null,
+  role: message?.role === 'assistant' ? 'assistant' : 'user',
+  content: String(message?.content || ''),
+  createTime: message?.createTime || new Date().toISOString(),
+  kind: message?.kind || 'message'
+})
+
+const readLocalMessages = (taskId) => {
+  if (!taskId) return []
+
+  try {
+    const raw = localStorage.getItem(buildLocalMessageKey(taskId))
+    if (!raw) return []
+
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+
+    return parsed.map((item, index) => normalizeLocalMessage(item, index))
+  } catch (error) {
+    console.error('读取本地问答缓存失败:', error)
+    return []
+  }
+}
+
+const writeLocalMessages = (taskId, list) => {
+  if (!taskId) return
+
+  try {
+    localStorage.setItem(buildLocalMessageKey(taskId), JSON.stringify(list))
+  } catch (error) {
+    console.error('写入本地问答缓存失败:', error)
+  }
+}
+
+const mergeMessageLists = (serverMessages = [], localMessages = []) => {
+  const merged = []
+  const seen = new Set()
+
+  for (const rawMessage of [...serverMessages, ...localMessages]) {
+    const message = normalizeLocalMessage(rawMessage)
+    const fingerprint = buildMessageFingerprint(message)
+
+    if (!message.content || seen.has(fingerprint)) {
+      continue
+    }
+
+    seen.add(fingerprint)
+    merged.push(message)
+  }
+
+  return merged
+}
+
+const appendLocalMessages = (taskId, nextEntries) => {
+  const merged = mergeMessageLists(readLocalMessages(taskId), nextEntries)
+  writeLocalMessages(taskId, merged)
+}
+
+const scheduleScrollToBottom = () => {
+  if (scrollFrame) {
+    return
+  }
+
+  scrollFrame = window.requestAnimationFrame(() => {
+    scrollFrame = null
+    scrollMessagesToBottom()
+  })
+}
+
+const trimLongText = (value, maxLength) => {
+  if (!value) return ''
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength)}...`
+}
+
+const nullSafe = (value) => (value ? value : '-')
+
+const hasQuestionInMessages = (list, questionText) => {
+  return (list || []).some((item) => {
+    return item?.role === 'user' && String(item?.content || '').trim() === questionText
+  })
+}
+
+const recoverLatestMessages = async (taskId, questionText, snapshotLength) => {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      const res = await getAiAnalysisMessages(taskId, { silent: true, timeout: 15000 })
+      const latest = res.data || []
+      const questionPersisted = hasQuestionInMessages(latest, questionText)
+      const hasNewData = latest.length > snapshotLength
+
+      if (questionPersisted || hasNewData) {
+        messages.value = mergeMessageLists(latest, readLocalMessages(taskId))
+        await nextTick()
+        scrollMessagesToBottom('smooth')
+        return questionPersisted
+      }
+    } catch (error) {
+      console.error('同步最新问答失败:', error)
+    }
+
+    await sleep(1500 * (attempt + 1))
+  }
+
+  return false
+}
 
 const parseTaskParams = (task) => {
   const raw = task?.params
@@ -327,6 +451,115 @@ const getTaskWorkflowName = (task) => {
 const getTaskSourceLabel = (task) => {
   const params = parseTaskParams(task)
   return task?.sourceTitle || params.sourceTitle || params.sourceTaskName || params.sourceTaskId || '-'
+}
+
+const buildTaskSourceFallback = (task) => {
+  const params = parseTaskParams(task)
+  const matched = sourceOptions.value.find((item) => {
+    return item.taskRecordId === params.sourceTaskRecordId || item.taskId === params.sourceTaskId
+  })
+
+  return {
+    taskId: params.sourceTaskId || matched?.taskId || '',
+    taskRecordId: params.sourceTaskRecordId || matched?.taskRecordId || null,
+    taskName: params.sourceTaskName || matched?.taskName || '',
+    title: task?.sourceTitle || params.sourceTitle || matched?.title || '',
+    finalUrl: params.sourceFinalUrl || matched?.finalUrl || '',
+    summaryText: matched?.summaryText || '',
+    structuredData: []
+  }
+}
+
+const loadTaskSource = async (task) => {
+  if (!task) {
+    currentTaskSource.value = null
+    return
+  }
+
+  const params = parseTaskParams(task)
+  const fallback = buildTaskSourceFallback(task)
+
+  if (!params.sourceTaskId) {
+    currentTaskSource.value = fallback
+    return
+  }
+
+  try {
+    const res = await getCrawlResultDetail(params.sourceTaskId, { silent: true })
+    currentTaskSource.value = {
+      ...fallback,
+      ...(res.data || {})
+    }
+  } catch (error) {
+    console.error('加载分析来源详情失败:', error)
+    currentTaskSource.value = fallback
+  }
+}
+
+const buildAiSystemPrompt = (source, initialAnalysis) => {
+  const structuredData = Array.isArray(source?.structuredData) && source.structuredData.length
+    ? JSON.stringify(source.structuredData)
+    : '[]'
+
+  const safeSummary = trimLongText(source?.summaryText || '', 6000)
+  const safeAnalysis = trimLongText(initialAnalysis || '', 8000)
+
+  return `你是 RPA 管理平台里的 AI 分析助手。
+请只基于当前采集结果和已有分析内容回答问题，不要编造来源中没有的信息。
+如果问题超出上下文，请明确说明无法从当前采集结果判断。
+
+【采集结果标题】
+${nullSafe(source?.title || source?.taskName)}
+
+【采集结果 URL】
+${nullSafe(source?.finalUrl)}
+
+【采集结果摘要】
+${nullSafe(safeSummary)}
+
+【结构化数据】
+${structuredData}
+
+【首次分析结论】
+${nullSafe(safeAnalysis)}`
+}
+
+const buildStreamMessages = (questionText) => {
+  const history = conversationItems.value
+    .filter((item) => item.kind !== 'thinking' && item.content)
+    .map((item) => ({
+      role: item.role === 'assistant' ? 'assistant' : 'user',
+      content: item.content
+    }))
+
+  return [
+    {
+      role: 'system',
+      content: buildAiSystemPrompt(
+        currentTaskSource.value || buildTaskSourceFallback(currentTask.value),
+        currentTask.value?.result || ''
+      )
+    },
+    ...history,
+    {
+      role: 'user',
+      content: questionText
+    }
+  ]
+}
+
+const patchMessage = (id, patch) => {
+  messages.value = messages.value.map((item) => {
+    if (item.id !== id) {
+      return item
+    }
+
+    const nextPatch = typeof patch === 'function' ? patch(item) : patch
+    return {
+      ...item,
+      ...nextPatch
+    }
+  })
 }
 
 const conversationItems = computed(() => {
@@ -462,6 +695,7 @@ const loadAiTasks = async (preferredTaskId = null) => {
       await loadCurrentTask(selectedTaskId.value)
     } else {
       currentTask.value = null
+      currentTaskSource.value = null
       messages.value = []
     }
   } finally {
@@ -474,13 +708,14 @@ const loadCurrentTask = async (taskId) => {
   const res = await getTaskDetail(taskId, { silent: true })
   currentTask.value = res.data
   selectedTaskId.value = taskId
+  await loadTaskSource(currentTask.value)
   await loadMessages(taskId)
   schedulePolling()
 }
 
 const loadMessages = async (taskId, behavior = 'auto') => {
   const res = await getAiAnalysisMessages(taskId, { silent: true })
-  messages.value = res.data || []
+  messages.value = mergeMessageLists(res.data || [], readLocalMessages(taskId))
   await nextTick()
   scrollMessagesToBottom(behavior)
 }
@@ -574,11 +809,126 @@ const handleAsk = async () => {
     await nextTick()
     scrollMessagesToBottom('smooth')
   } catch (error) {
+    const recovered = await recoverLatestMessages(taskId, text, snapshot.length)
+
+    if (recovered) {
+      ElMessage.warning('连接中断后已从服务端同步到最新回答')
+      return
+    }
+
     messages.value = snapshot
     question.value = text
     ElMessage.error('发送失败，请重试')
   } finally {
     asking.value = false
+  }
+}
+
+const handleAskStream = async () => {
+  const text = question.value.trim()
+  const taskId = currentTask.value?.id
+
+  if (!text || !taskId || !canAsk.value || asking.value) {
+    return
+  }
+
+  const snapshot = Array.isArray(messages.value) ? messages.value.map((item) => ({ ...item })) : []
+  const streamMessages = buildStreamMessages(text)
+  const now = new Date().toISOString()
+  const optimisticUserMessage = {
+    id: `stream-user-${Date.now()}`,
+    analysisTaskId: taskId,
+    role: 'user',
+    content: text,
+    createTime: now,
+    kind: 'message'
+  }
+  const optimisticAssistantMessage = {
+    id: `stream-thinking-${Date.now()}`,
+    analysisTaskId: taskId,
+    role: 'assistant',
+    content: '',
+    createTime: now,
+    kind: 'thinking'
+  }
+
+  messages.value = [
+    ...snapshot,
+    optimisticUserMessage,
+    optimisticAssistantMessage
+  ]
+  question.value = ''
+  asking.value = true
+  streamAbortController?.abort()
+  streamAbortController = new AbortController()
+
+  await nextTick()
+  scrollMessagesToBottom('smooth')
+
+  try {
+    const streamed = await streamAiAnalysisMessage(streamMessages, {
+      signal: streamAbortController.signal,
+      onReasoning: () => {
+        scheduleScrollToBottom()
+      },
+      onContent: (fullContent) => {
+        patchMessage(optimisticAssistantMessage.id, {
+          kind: 'message',
+          content: fullContent
+        })
+        scheduleScrollToBottom()
+      }
+    })
+
+    const finalContent = String(streamed.content || '').trim()
+    if (!finalContent) {
+      throw new Error('AI 暂未返回可展示内容')
+    }
+
+    const finalAssistantMessage = {
+      id: `local-assistant-${Date.now()}`,
+      analysisTaskId: taskId,
+      role: 'assistant',
+      content: finalContent,
+      createTime: new Date().toISOString(),
+      kind: 'message'
+    }
+
+    messages.value = [
+      ...snapshot,
+      optimisticUserMessage,
+      finalAssistantMessage
+    ]
+    appendLocalMessages(taskId, [optimisticUserMessage, finalAssistantMessage])
+    await nextTick()
+    scrollMessagesToBottom('smooth')
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      return
+    }
+
+    try {
+      const res = await sendAiAnalysisMessage(taskId, text, { silent: true })
+      messages.value = mergeMessageLists(res.data || [], readLocalMessages(taskId))
+      await nextTick()
+      scrollMessagesToBottom('smooth')
+      ElMessage.warning('流式通道不可用，已自动切回普通问答')
+      return
+    } catch (fallbackError) {
+      const recovered = await recoverLatestMessages(taskId, text, snapshot.length)
+
+      if (recovered) {
+        ElMessage.warning('连接中断后已从服务端同步到最新回复')
+        return
+      }
+
+      messages.value = snapshot
+      question.value = text
+      ElMessage.error(error?.message || '发送失败，请重试')
+    }
+  } finally {
+    asking.value = false
+    streamAbortController = null
   }
 }
 
@@ -589,7 +939,7 @@ const handleQuestionKeydown = (event) => {
 
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
-    void handleAsk()
+    void handleAskStream()
   }
 }
 
@@ -644,6 +994,11 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopPolling()
+  streamAbortController?.abort()
+  if (scrollFrame) {
+    window.cancelAnimationFrame(scrollFrame)
+    scrollFrame = null
+  }
 })
 </script>
 

@@ -86,9 +86,10 @@ export function stopRobot(id) {
 /**
  * 获取机器人统计
  */
-export function getRobotStats() {
+export function getRobotStats(config = {}) {
   return request({
     url: '/robots/stats',
-    method: 'get'
+    method: 'get',
+    ...config
   })
 }

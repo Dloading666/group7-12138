@@ -1,6 +1,8 @@
 import argparse
 import asyncio
 import json
+import os
+import re
 import threading
 import traceback
 import logging
@@ -10,6 +12,7 @@ import cozeloop
 import uvicorn
 import time
 import httpx
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from langchain_core.runnables import RunnableConfig
@@ -34,10 +37,11 @@ setup_logging(
 
 logger = logging.getLogger(__name__)
 from coze_coding_utils.helper.agent_helper import to_stream_input
-from coze_coding_utils.openai.handler import OpenAIChatHandler
 from coze_coding_utils.log.parser import LangGraphParser
 from coze_coding_utils.log.err_trace import extract_core_stack
 from coze_coding_utils.log.loop_trace import init_run_config, init_agent_config
+
+load_dotenv(override=True)
 
 
 # 超时配置常量
@@ -238,9 +242,295 @@ class GraphService:
 service = GraphService()
 app = FastAPI()
 
-# OpenAI 兼容接口处理器
-openai_handler = OpenAIChatHandler(service)
 
+def _get_openai_base_url() -> str:
+    return os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+
+
+def _is_ollama_base_url(base_url: str) -> bool:
+    normalized = (base_url or "").lower()
+    return "11434" in normalized or "ollama" in normalized
+
+
+def _resolve_chat_options(base_url: str, temperature: Any, max_tokens: Any):
+    resolved_temperature = 0.1
+    if temperature is not None:
+        resolved_temperature = float(temperature)
+
+    if max_tokens is not None:
+        resolved_max_tokens = int(max_tokens)
+    elif _is_ollama_base_url(base_url):
+        # Keep local Ollama replies shorter so the first answer returns sooner.
+        resolved_max_tokens = 128
+    else:
+        resolved_max_tokens = 512
+
+    resolved_timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "180"))
+    return resolved_temperature, resolved_max_tokens, resolved_timeout
+
+# OpenAI 兼容接口处理器
+def _create_chat_llm(model: Optional[str], temperature: Any, max_tokens: Any):
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key or api_key in ("your-api-key-here", "sk-xxx"):
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+
+    from langchain_openai import ChatOpenAI
+
+    base_url = _get_openai_base_url()
+    default_headers = {}
+    if "openrouter" in base_url:
+        default_headers = {
+            "HTTP-Referer": "https://github.com/rpa-management",
+            "X-Title": "RPA Management Platform",
+        }
+
+    resolved_temperature, resolved_max_tokens, resolved_timeout = _resolve_chat_options(
+        base_url, temperature, max_tokens
+    )
+
+    return ChatOpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        model=model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        temperature=resolved_temperature,
+        max_tokens=resolved_max_tokens,
+        timeout=resolved_timeout,
+        max_retries=0,
+        default_headers=default_headers,
+    )
+
+
+async def _proxy_ollama_chat_completion(payload: Dict[str, Any], model: str):
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    base_url = _get_openai_base_url()
+    resolved_temperature, resolved_max_tokens, resolved_timeout = _resolve_chat_options(
+        base_url, payload.get("temperature"), payload.get("max_tokens")
+    )
+
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    request_payload = {
+        "model": model,
+        "messages": payload.get("messages", []),
+        "stream": False,
+        "temperature": resolved_temperature,
+        "max_tokens": resolved_max_tokens,
+    }
+
+    async with httpx.AsyncClient(timeout=resolved_timeout) as client:
+        response = await client.post(
+            f"{base_url}/chat/completions",
+            json=request_payload,
+            headers=headers,
+        )
+        response.raise_for_status()
+        body = response.json()
+
+    content = _coerce_chat_text(
+        (((body.get("choices") or [{}])[0]).get("message") or {}).get("content")
+    )
+    if not content:
+        raise RuntimeError("Empty assistant response")
+
+    return body.get("model") or model, content, body.get("usage")
+
+
+def _coerce_chat_text(content: Any) -> str:
+    if content is None:
+        return ""
+
+    if isinstance(content, str):
+        return content.strip()
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    parts.append(text)
+                continue
+
+            if not isinstance(item, dict):
+                text = str(item).strip()
+                if text:
+                    parts.append(text)
+                continue
+
+            item_type = item.get("type")
+            if item_type == "text":
+                text = str(item.get("text", "")).strip()
+                if text:
+                    parts.append(text)
+                continue
+
+            if item_type == "image_url":
+                image = item.get("image_url") or {}
+                url = str(image.get("url", "")).strip()
+                if url:
+                    parts.append(url)
+                continue
+
+            text = str(item).strip()
+            if text:
+                parts.append(text)
+
+        return "\n".join(parts)
+
+    return str(content).strip()
+
+
+def _convert_openai_messages(messages_raw: Any):
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+    converted = []
+    for item in messages_raw or []:
+        if not isinstance(item, dict):
+            continue
+
+        content = _coerce_chat_text(item.get("content"))
+        if not content:
+            continue
+
+        role = str(item.get("role", "user")).lower()
+        if role == "system":
+            converted.append(SystemMessage(content=content))
+        elif role == "assistant":
+            converted.append(AIMessage(content=content))
+        else:
+            converted.append(HumanMessage(content=content))
+
+    return converted
+
+
+def _build_openai_response(request_id: str, model: str, content: str, usage: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+    response = {
+        "id": request_id,
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                },
+                "finish_reason": "stop",
+            }
+        ],
+    }
+    if usage:
+        response["usage"] = usage
+    return response
+
+
+def _build_openai_error(message: str, status_code: int, error_type: str, code: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {
+                "message": message,
+                "type": error_type,
+                "code": code,
+            }
+        },
+    )
+
+
+def _find_latest_message_content(messages_raw: Any, role: str) -> str:
+    expected_role = role.lower()
+    for item in reversed(messages_raw or []):
+        if not isinstance(item, dict):
+            continue
+
+        actual_role = str(item.get("role", "")).lower()
+        if actual_role != expected_role:
+            continue
+
+        content = _coerce_chat_text(item.get("content"))
+        if content:
+            return content
+
+    return ""
+
+
+def _extract_prompt_section(system_prompt: str, label: str) -> str:
+    if not system_prompt:
+        return ""
+
+    pattern = rf"【{re.escape(label)}】\s*(.*?)(?=\n\s*【|\Z)"
+    matched = re.search(pattern, system_prompt, flags=re.S)
+    return matched.group(1).strip() if matched else ""
+
+
+def _trim_text(value: str, max_length: int = 280) -> str:
+    compact = re.sub(r"\s+", " ", (value or "")).strip()
+    if len(compact) <= max_length:
+        return compact
+    return compact[: max_length - 3] + "..."
+
+
+def _build_fallback_chat_response(messages_raw: Any, error: Exception) -> str:
+    system_prompt = _find_latest_message_content(messages_raw, "system")
+    user_question = _find_latest_message_content(messages_raw, "user") or "未提供具体问题"
+    last_assistant = _find_latest_message_content(messages_raw, "assistant")
+
+    source_title = _extract_prompt_section(system_prompt, "采集结果标题")
+    source_url = _extract_prompt_section(system_prompt, "采集结果URL")
+    source_summary = _extract_prompt_section(system_prompt, "采集结果摘要")
+    initial_analysis = _extract_prompt_section(system_prompt, "首次分析结论")
+
+    context_text = _trim_text(last_assistant or initial_analysis or source_summary, 420)
+    question_text = user_question.strip()
+    lower_question = question_text.lower()
+
+    if any(keyword in question_text for keyword in ("网址", "链接", "地址")) or "url" in lower_question:
+        direct_answer = f"当前采集到的页面地址是：{source_url}" if source_url else "当前上下文里没有提取到可直接返回的网址。"
+    elif any(keyword in question_text for keyword in ("标题", "名称", "叫什么", "是什么")):
+        if source_title:
+            direct_answer = f"当前采集对象是“{source_title}”。"
+        elif context_text:
+            direct_answer = f"基于现有分析，它对应的对象信息是：{context_text}"
+        else:
+            direct_answer = "当前上下文不足，暂时无法准确判断这个对象是什么。"
+    elif any(keyword in question_text for keyword in ("做什么", "干什么", "功能", "用途", "作用")):
+        if context_text:
+            direct_answer = f"基于现有采集结果，它目前更像是这样一个对象：{context_text}"
+        else:
+            direct_answer = "当前采集结果信息较少，只能确认这是本次分析关联的页面，具体功能仍需要更多原始内容。"
+    elif any(keyword in question_text for keyword in ("总结", "摘要", "概括", "概述")):
+        direct_answer = context_text or "当前采集结果信息较少，暂时无法给出更完整的总结。"
+    elif any(keyword in question_text for keyword in ("风险", "问题", "隐患", "注意")):
+        direct_answer = "基于当前采集结果，暂未提取到明确的风险条目；现阶段更大的限制是原始页面信息不足，很多判断还不能下结论。"
+    else:
+        direct_answer = context_text or "我已经收到你的问题，但当前只能基于已有采集结果和历史分析提供有限回答。"
+
+    reply_lines = [
+        "当前问答服务遇到了上游模型临时限流，我先基于平台里已有的采集结果和历史分析给你一个保底答复。",
+        "",
+        f"关于你的问题“{question_text}”：",
+        direct_answer,
+    ]
+
+    if source_title:
+        reply_lines.extend(["", f"来源标题：{source_title}"])
+    if source_url:
+        reply_lines.append(f"来源地址：{source_url}")
+    if source_summary and source_summary not in direct_answer:
+        reply_lines.extend(["", f"现有摘要：{_trim_text(source_summary, 220)}"])
+
+    reply_lines.extend([
+        "",
+        "说明：这次回复使用的是本地兜底回答，没有新增超出当前采集结果之外的推断。",
+    ])
+
+    logger.warning("Using fallback chat response due to upstream LLM failure: %s", error)
+    return "\n".join(reply_lines)
 
 HEADER_X_RUN_ID = "x-run-id"
 @app.post("/run")
@@ -458,10 +748,59 @@ async def openai_chat_completions(request: Request):
 
     try:
         payload = await request.json()
-        return await openai_handler.handle(payload, ctx)
+        session_id = str(
+            payload.get("session_id")
+            or payload.get("taskId")
+            or payload.get("task_id")
+            or ctx.run_id
+        ).strip()
+        payload["session_id"] = session_id
+
+        if payload.get("stream"):
+            return _build_openai_error("stream=true is not supported", 400, "invalid_request_error", "400003")
+
+        raw_messages = payload.get("messages", [])
+        messages = _convert_openai_messages(raw_messages)
+        if not messages:
+            return _build_openai_error("No user message found", 400, "invalid_request_error", "400002")
+
+        model = os.getenv("OPENAI_MODEL", "").strip() or payload.get("model") or "gpt-4o-mini"
+        usage = None
+        try:
+            if _is_ollama_base_url(_get_openai_base_url()):
+                model, content, usage = await _proxy_ollama_chat_completion(payload, model)
+            else:
+                llm = _create_chat_llm(model, payload.get("temperature"), payload.get("max_tokens"))
+                result = await llm.ainvoke(messages)
+                content = _coerce_chat_text(result.content)
+                if not content:
+                    raise RuntimeError("Empty assistant response")
+
+                usage_metadata = getattr(result, "usage_metadata", None)
+                if isinstance(usage_metadata, dict):
+                    usage = {
+                        "prompt_tokens": int(usage_metadata.get("input_tokens", 0)),
+                        "completion_tokens": int(usage_metadata.get("output_tokens", 0)),
+                        "total_tokens": int(usage_metadata.get("total_tokens", 0)),
+                    }
+        except Exception as llm_error:
+            model = f"{model}-fallback"
+            content = _build_fallback_chat_response(raw_messages, llm_error)
+
+        return JSONResponse(
+            content=_build_openai_response(
+                request_id=f"chatcmpl-{ctx.run_id}",
+                model=model,
+                content=content,
+                usage=usage,
+            )
+        )
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error in openai_chat_completions: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON format")
+    except Exception as e:
+        logger.error(f"Error in openai_chat_completions: {e}", exc_info=True)
+        return _build_openai_error(str(e), 500, "internal_error", "103002")
     finally:
         cozeloop.flush()
 
@@ -487,16 +826,15 @@ async def http_submit(request: Request) -> Dict[str, Any]:
 
     logger.info(f"[submit] 接收任务: taskId={task_id}, runId={run_id}, callbackUrl={callback_url}")
 
-    # ── 后台异步运行工作流，立即返回 ────────────────────────────────────
     async def _run_workflow():
         from graphs.graph import graph as rpa_graph
+
         initial_state = {
             "task_id": task_id,
             "workflow_id": payload.get("workflowId"),
             "callback_url": callback_url,
             "params": payload.get("params") or {},
             "run_id": run_id,
-            # 以下字段将由各节点填充
             "raw_content": "",
             "analysis": "",
             "summary": "",
@@ -510,17 +848,19 @@ async def http_submit(request: Request) -> Dict[str, Any]:
             await rpa_graph.ainvoke(initial_state)
             logger.info(f"[submit] 工作流执行完成: taskId={task_id}")
         except Exception as ex:
-            # 兜底：send_callback 节点本身出错时，直接发失败回调
             logger.error(f"[submit] 工作流异常: taskId={task_id}, error={ex}", exc_info=True)
             if callback_url:
                 try:
                     async with httpx.AsyncClient(timeout=10) as client:
-                        await client.post(callback_url, json={
-                            "taskId": task_id,
-                            "runId": run_id,
-                            "status": "failed",
-                            "errorMessage": f"Agent 内部异常：{ex}",
-                        })
+                        await client.post(
+                            callback_url,
+                            json={
+                                "taskId": task_id,
+                                "runId": run_id,
+                                "status": "failed",
+                                "errorMessage": f"Agent 内部异常：{ex}",
+                            },
+                        )
                 except Exception as cb_ex:
                     logger.error(f"[submit] 兜底回调也失败: {cb_ex}")
 

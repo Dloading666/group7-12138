@@ -1,42 +1,43 @@
 import request from '../utils/request'
 
-// 数据查询 - 对应 DataQueryController (/data)
-
-export function queryCrawlResults(params) {
+export function queryCrawlResults(params, config = {}) {
   return request({
     url: '/data/query',
     method: 'get',
-    params
+    params,
+    ...config
   })
 }
 
-// 统计报表 - 对应 DataQueryController (/data/stats/*)
-
-export function getTaskStatusStats() {
+export function getTaskStatusStats(config = {}) {
   return request({
     url: '/data/stats/status',
-    method: 'get'
+    method: 'get',
+    ...config
   })
 }
 
-export function getTaskTrendStats(params) {
+export function getTaskTrendStats(params, config = {}) {
   return request({
     url: '/data/stats/trend',
     method: 'get',
-    params  // { days: 7 | 30 }
+    params,
+    ...config
   })
 }
 
-export function getTaskTypeStats() {
+export function getTaskTypeStats(config = {}) {
   return request({
     url: '/data/stats/type',
-    method: 'get'
+    method: 'get',
+    ...config
   })
 }
 
-export function getOverviewStats() {
+export function getOverviewStats(config = {}) {
   return request({
     url: '/data/stats/overview',
-    method: 'get'
+    method: 'get',
+    ...config
   })
 }

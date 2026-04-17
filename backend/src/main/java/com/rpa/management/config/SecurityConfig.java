@@ -82,7 +82,7 @@ public class SecurityConfig {
                 // 添加JWT过滤器
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 
-                // 允许H2控制台iframe（开发环境）
+                // 允许H2控制台frame（开发环境）
                 .headers(headers -> headers.frameOptions(frame -> frame.disable()));
         
         return http.build();
