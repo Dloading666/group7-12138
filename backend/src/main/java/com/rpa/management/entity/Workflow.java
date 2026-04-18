@@ -33,12 +33,18 @@ public class Workflow {
      */
     @Column(length = 1000)
     private String description;
+
+    @Column(length = 100)
+    private String category;
     
     /**
      * 状态：draft-草稿, published-已发布, archived-已归档
      */
     @Column(length = 20)
     private String status;
+
+    @Column(name = "latest_version_id")
+    private Long latestVersionId;
     
     /**
      * 版本号
@@ -67,6 +73,14 @@ public class Workflow {
     @Lob
     @Column(name = "config")
     private String config;
+
+    @Lob
+    @Column(name = "input_schema", columnDefinition = "LONGTEXT")
+    private String inputSchema;
+
+    @Lob
+    @Column(name = "graph", columnDefinition = "LONGTEXT")
+    private String graph;
     
     /**
      * 创建时间

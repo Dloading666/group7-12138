@@ -28,6 +28,9 @@ public class CrawlResult {
     @Column(name = "task_record_id")
     private Long taskRecordId;
 
+    @Column(name = "task_run_id")
+    private Long taskRunId;
+
     @Column(name = "task_id", nullable = false, unique = true, length = 50)
     private String taskId;
 

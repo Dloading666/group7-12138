@@ -22,6 +22,8 @@ public class ExecutionLogDTO {
      * 任务ID
      */
     private Long taskId;
+
+    private Long taskRunId;
     
     /**
      * 任务编号

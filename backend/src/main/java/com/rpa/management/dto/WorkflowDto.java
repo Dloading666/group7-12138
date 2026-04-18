@@ -13,12 +13,16 @@ public class WorkflowDTO {
     private String workflowCode;
     private String name;
     private String description;
+    private String category;
     private String status;
     private Integer version;
     private Long userId;
     private String userName;
     private LocalDateTime publishTime;
     private String config;
+    private String inputSchema;
+    private String graph;
+    private Long latestVersionId;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
     

@@ -237,3 +237,145 @@ CREATE TABLE sys_operation_log (
     INDEX idx_user_id (user_id),
     INDEX idx_create_time (create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='操作日志表';
+-- =============================================
+-- 10. 流程草稿与发布版本
+-- =============================================
+CREATE TABLE IF NOT EXISTS workflow (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    workflow_code VARCHAR(100) NOT NULL UNIQUE,
+    name VARCHAR(200) NOT NULL,
+    description VARCHAR(1000),
+    category VARCHAR(100),
+    status VARCHAR(20) DEFAULT 'draft',
+    version INT DEFAULT 1,
+    user_id BIGINT,
+    user_name VARCHAR(100),
+    publish_time DATETIME,
+    latest_version_id BIGINT,
+    config LONGTEXT,
+    input_schema LONGTEXT,
+    graph LONGTEXT,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_workflow_code (workflow_code),
+    INDEX idx_workflow_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='流程草稿表';
+
+CREATE TABLE IF NOT EXISTS sys_workflow_version (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    workflow_id BIGINT NOT NULL,
+    version_number INT NOT NULL,
+    workflow_code VARCHAR(100) NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    description VARCHAR(1000),
+    category VARCHAR(100),
+    publish_status VARCHAR(20) DEFAULT 'published',
+    user_id BIGINT,
+    user_name VARCHAR(100),
+    publish_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    input_schema LONGTEXT,
+    graph LONGTEXT,
+    INDEX idx_workflow_version_workflow_id (workflow_id),
+    INDEX idx_workflow_version_status (publish_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='流程发布版本表';
+
+-- =============================================
+-- 11. 任务运行
+-- =============================================
+CREATE TABLE IF NOT EXISTS sys_task_run (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    run_id VARCHAR(50) NOT NULL UNIQUE,
+    task_id BIGINT NOT NULL,
+    task_code VARCHAR(50),
+    task_name VARCHAR(100),
+    workflow_version_id BIGINT,
+    workflow_name VARCHAR(200),
+    workflow_category VARCHAR(100),
+    status VARCHAR(20) DEFAULT 'pending',
+    progress INT DEFAULT 0,
+    trigger_type VARCHAR(20) DEFAULT 'manual',
+    engine_run_id VARCHAR(100),
+    input_config LONGTEXT,
+    workflow_snapshot LONGTEXT,
+    result LONGTEXT,
+    error_message LONGTEXT,
+    start_time DATETIME,
+    end_time DATETIME,
+    duration INT DEFAULT 0,
+    user_id BIGINT,
+    user_name VARCHAR(50),
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_task_run_task_id (task_id),
+    INDEX idx_task_run_status (status),
+    INDEX idx_task_run_engine_run_id (engine_run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='任务运行表';
+
+CREATE TABLE IF NOT EXISTS sys_workflow_debug_run (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    run_id VARCHAR(50) NOT NULL UNIQUE,
+    workflow_id BIGINT NOT NULL,
+    workflow_code VARCHAR(100),
+    workflow_name VARCHAR(200),
+    status VARCHAR(20) DEFAULT 'pending',
+    progress INT DEFAULT 0,
+    input_config LONGTEXT,
+    graph_snapshot LONGTEXT,
+    result LONGTEXT,
+    error_message LONGTEXT,
+    start_time DATETIME,
+    end_time DATETIME,
+    duration INT DEFAULT 0,
+    user_id BIGINT,
+    user_name VARCHAR(50),
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_workflow_debug_run_workflow_id (workflow_id),
+    INDEX idx_workflow_debug_run_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='workflow debug run';
+
+CREATE TABLE IF NOT EXISTS sys_workflow_step_run (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    step_run_id VARCHAR(50) NOT NULL UNIQUE,
+    task_run_id BIGINT,
+    debug_run_id BIGINT,
+    node_id VARCHAR(100) NOT NULL,
+    node_type VARCHAR(100) NOT NULL,
+    node_label VARCHAR(200),
+    branch_key VARCHAR(100),
+    engine_task_id VARCHAR(100),
+    status VARCHAR(20) DEFAULT 'pending',
+    input_snapshot LONGTEXT,
+    output_snapshot LONGTEXT,
+    error_message LONGTEXT,
+    start_time DATETIME,
+    end_time DATETIME,
+    duration INT DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_workflow_step_run_task_run_id (task_run_id),
+    INDEX idx_workflow_step_run_debug_run_id (debug_run_id),
+    INDEX idx_workflow_step_run_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='workflow step run';
+
+ALTER TABLE sys_task
+    ADD COLUMN IF NOT EXISTS workflow_id BIGINT,
+    ADD COLUMN IF NOT EXISTS workflow_version_id BIGINT,
+    ADD COLUMN IF NOT EXISTS workflow_version INT,
+    ADD COLUMN IF NOT EXISTS workflow_name VARCHAR(200),
+    ADD COLUMN IF NOT EXISTS workflow_category VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS input_config LONGTEXT,
+    ADD COLUMN IF NOT EXISTS schedule_config LONGTEXT,
+    ADD COLUMN IF NOT EXISTS latest_run_id BIGINT,
+    ADD COLUMN IF NOT EXISTS latest_run_status VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS last_run_time DATETIME,
+    ADD COLUMN IF NOT EXISTS next_run_time DATETIME;
+
+ALTER TABLE sys_crawl_result
+    ADD COLUMN IF NOT EXISTS task_run_id BIGINT;
+
+ALTER TABLE sys_ai_analysis_message
+    ADD COLUMN IF NOT EXISTS task_run_id BIGINT;
+
+ALTER TABLE sys_execution_log
+    ADD COLUMN IF NOT EXISTS task_run_id BIGINT;

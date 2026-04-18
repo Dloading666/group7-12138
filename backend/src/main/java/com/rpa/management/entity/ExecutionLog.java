@@ -23,6 +23,9 @@ public class ExecutionLog {
      */
     @Column(name = "task_id", nullable = true)
     private Long taskId;
+
+    @Column(name = "task_run_id")
+    private Long taskRunId;
     
     /**
      * 任务编号

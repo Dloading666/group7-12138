@@ -15,6 +15,8 @@ public class CrawlResultDTO {
 
     private Long taskRecordId;
 
+    private Long taskRunId;
+
     private String taskId;
 
     private String taskName;

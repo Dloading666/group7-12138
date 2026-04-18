@@ -31,6 +31,8 @@ public interface WorkflowRepository extends JpaRepository<Workflow, Long> {
      * 根据状态查询
      */
     List<Workflow> findByStatusOrderByCreateTimeDesc(String status);
+
+    List<Workflow> findByStatusAndLatestVersionIdIsNotNullOrderByPublishTimeDesc(String status);
     
     /**
      * 根据用户ID查询

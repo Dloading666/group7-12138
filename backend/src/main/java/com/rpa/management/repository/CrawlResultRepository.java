@@ -18,6 +18,8 @@ public interface CrawlResultRepository extends JpaRepository<CrawlResult, Long> 
 
     Optional<CrawlResult> findByTaskRecordId(Long taskRecordId);
 
+    Optional<CrawlResult> findByTaskRunId(Long taskRunId);
+
     void deleteByTaskId(String taskId);
 
     @Query("""

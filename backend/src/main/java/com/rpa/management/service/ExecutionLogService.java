@@ -30,11 +30,12 @@ public class ExecutionLogService {
      * 记录日志
      */
     @Transactional
-    public ExecutionLogDTO log(Long taskId, String taskCode, String taskName, 
-                               Long robotId, String robotName, String level, 
+    public ExecutionLogDTO log(Long taskId, Long taskRunId, String taskCode, String taskName,
+                               Long robotId, String robotName, String level,
                                String message, String stage) {
         ExecutionLog executionLog = new ExecutionLog();
         executionLog.setTaskId(taskId);
+        executionLog.setTaskRunId(taskRunId);
         executionLog.setTaskCode(taskCode);
         executionLog.setTaskName(taskName);
         executionLog.setRobotId(robotId);
@@ -46,29 +47,51 @@ public class ExecutionLogService {
         executionLog = executionLogRepository.save(executionLog);
         return toDTO(executionLog);
     }
+
+    @Transactional
+    public ExecutionLogDTO log(Long taskId, String taskCode, String taskName,
+                               Long robotId, String robotName, String level,
+                               String message, String stage) {
+        return log(taskId, null, taskCode, taskName, robotId, robotName, level, message, stage);
+    }
     
     /**
      * 记录INFO日志
      */
-    public ExecutionLogDTO info(Long taskId, String taskCode, String taskName, 
+    public ExecutionLogDTO info(Long taskId, Long taskRunId, String taskCode, String taskName,
                                 Long robotId, String robotName, String message) {
-        return log(taskId, taskCode, taskName, robotId, robotName, "INFO", message, null);
+        return log(taskId, taskRunId, taskCode, taskName, robotId, robotName, "INFO", message, null);
+    }
+
+    public ExecutionLogDTO info(Long taskId, String taskCode, String taskName,
+                                Long robotId, String robotName, String message) {
+        return info(taskId, null, taskCode, taskName, robotId, robotName, message);
     }
     
     /**
      * 记录WARN日志
      */
-    public ExecutionLogDTO warn(Long taskId, String taskCode, String taskName, 
+    public ExecutionLogDTO warn(Long taskId, Long taskRunId, String taskCode, String taskName,
                                 Long robotId, String robotName, String message) {
-        return log(taskId, taskCode, taskName, robotId, robotName, "WARN", message, null);
+        return log(taskId, taskRunId, taskCode, taskName, robotId, robotName, "WARN", message, null);
+    }
+
+    public ExecutionLogDTO warn(Long taskId, String taskCode, String taskName,
+                                Long robotId, String robotName, String message) {
+        return warn(taskId, null, taskCode, taskName, robotId, robotName, message);
     }
     
     /**
      * 记录ERROR日志
      */
-    public ExecutionLogDTO error(Long taskId, String taskCode, String taskName, 
+    public ExecutionLogDTO error(Long taskId, Long taskRunId, String taskCode, String taskName,
                                  Long robotId, String robotName, String message) {
-        return log(taskId, taskCode, taskName, robotId, robotName, "ERROR", message, "error");
+        return log(taskId, taskRunId, taskCode, taskName, robotId, robotName, "ERROR", message, "error");
+    }
+
+    public ExecutionLogDTO error(Long taskId, String taskCode, String taskName,
+                                 Long robotId, String robotName, String message) {
+        return error(taskId, null, taskCode, taskName, robotId, robotName, message);
     }
     
     /**
@@ -89,6 +112,12 @@ public class ExecutionLogService {
      */
     public List<ExecutionLogDTO> getLogsByTaskId(Long taskId) {
         return executionLogRepository.findByTaskIdOrderByCreateTimeDesc(taskId).stream()
+                .map(this::toDTO)
+                .collect(Collectors.toList());
+    }
+
+    public List<ExecutionLogDTO> getLogsByTaskRunId(Long taskRunId) {
+        return executionLogRepository.findByTaskRunIdOrderByCreateTimeAsc(taskRunId).stream()
                 .map(this::toDTO)
                 .collect(Collectors.toList());
     }
@@ -119,6 +148,7 @@ public class ExecutionLogService {
         return ExecutionLogDTO.builder()
                 .id(log.getId())
                 .taskId(log.getTaskId())
+                .taskRunId(log.getTaskRunId())
                 .taskCode(log.getTaskCode())
                 .taskName(log.getTaskName())
                 .robotId(log.getRobotId())

@@ -1,13 +1,16 @@
 package com.rpa.management.controller;
 
-import com.alibaba.fastjson2.JSONObject;
-import com.rpa.management.client.AgentApiClient;
+import com.alibaba.fastjson2.JSON;
 import com.rpa.management.dto.ApiResponse;
 import com.rpa.management.dto.NodeTypeDTO;
+import com.rpa.management.dto.TaskDTO;
 import com.rpa.management.dto.WorkflowDTO;
-import com.rpa.management.entity.Task;
-import com.rpa.management.repository.TaskRepository;
+import com.rpa.management.dto.WorkflowDebugRunDTO;
+import com.rpa.management.dto.WorkflowVersionDTO;
+import com.rpa.management.engine.WorkflowRunExecutor;
 import com.rpa.management.service.NodeTypeService;
+import com.rpa.management.service.TaskService;
+import com.rpa.management.service.WorkflowDebugRunService;
 import com.rpa.management.service.WorkflowService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,252 +19,237 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 流程管理控制器
- */
 @Slf4j
-@Tag(name = "流程管理", description = "流程和节点类型的增删改查接口")
 @RestController
-@RequestMapping("/workflows")
 @RequiredArgsConstructor
+@RequestMapping("/workflows")
+@Tag(name = "工作流管理", description = "工作流草稿、版本、调试与节点类型接口")
 public class WorkflowController {
-    
+
     private final WorkflowService workflowService;
     private final NodeTypeService nodeTypeService;
-    private final AgentApiClient agentApiClient;
-    private final TaskRepository taskRepository;
-    
-    // ==================== 流程接口 ====================
-    
-    /**
-     * 创建流程
-     */
-    @Operation(summary = "创建流程", description = "创建新的流程")
+    private final TaskService taskService;
+    private final WorkflowDebugRunService workflowDebugRunService;
+    private final WorkflowRunExecutor workflowRunExecutor;
+
     @PostMapping
+    @Operation(summary = "创建工作流")
     public ApiResponse<WorkflowDTO> createWorkflow(@Valid @RequestBody WorkflowDTO dto, HttpServletRequest request) {
         try {
             Long userId = (Long) request.getAttribute("userId");
             String userName = (String) request.getAttribute("username");
-            
-            WorkflowDTO workflow = workflowService.createWorkflow(dto, userId, userName);
-            return ApiResponse.success("创建流程成功", workflow);
-        } catch (Exception e) {
-            log.error("创建流程失败: {}", e.getMessage());
-            return ApiResponse.error(400, e.getMessage());
+            return ApiResponse.success("创建工作流成功", workflowService.createWorkflow(dto, userId, userName));
+        } catch (Exception ex) {
+            log.error("Create workflow failed", ex);
+            return ApiResponse.error(400, ex.getMessage());
         }
     }
-    
-    /**
-     * 更新流程
-     */
-    @Operation(summary = "更新流程", description = "更新流程信息")
+
     @PutMapping("/{id}")
+    @Operation(summary = "更新工作流草稿")
     public ApiResponse<WorkflowDTO> updateWorkflow(@PathVariable Long id, @Valid @RequestBody WorkflowDTO dto) {
         try {
-            WorkflowDTO workflow = workflowService.updateWorkflow(id, dto);
-            return ApiResponse.success("更新流程成功", workflow);
-        } catch (Exception e) {
-            log.error("更新流程失败: {}", e.getMessage());
-            return ApiResponse.error(400, e.getMessage());
+            return ApiResponse.success("更新工作流成功", workflowService.updateWorkflow(id, dto));
+        } catch (Exception ex) {
+            log.error("Update workflow failed", ex);
+            return ApiResponse.error(400, ex.getMessage());
         }
     }
-    
-    /**
-     * 发布流程
-     */
-    @Operation(summary = "发布流程", description = "发布流程")
+
     @PostMapping("/{id}/publish")
+    @Operation(summary = "发布工作流")
     public ApiResponse<WorkflowDTO> publishWorkflow(@PathVariable Long id) {
         try {
-            WorkflowDTO workflow = workflowService.publishWorkflow(id);
-            return ApiResponse.success("流程发布成功", workflow);
-        } catch (Exception e) {
-            log.error("发布流程失败: {}", e.getMessage());
-            return ApiResponse.error(400, e.getMessage());
+            return ApiResponse.success("发布工作流成功", workflowService.publishWorkflow(id));
+        } catch (Exception ex) {
+            log.error("Publish workflow failed", ex);
+            return ApiResponse.error(400, ex.getMessage());
         }
     }
-    
-    /**
-     * 删除流程
-     */
-    @Operation(summary = "删除流程", description = "删除流程")
+
     @DeleteMapping("/{id}")
+    @Operation(summary = "删除工作流")
     public ApiResponse<Void> deleteWorkflow(@PathVariable Long id) {
         try {
             workflowService.deleteWorkflow(id);
-            return ApiResponse.success("删除流程成功", null);
-        } catch (Exception e) {
-            log.error("删除流程失败: {}", e.getMessage());
-            return ApiResponse.error(400, e.getMessage());
+            return ApiResponse.success("删除工作流成功", null);
+        } catch (Exception ex) {
+            log.error("Delete workflow failed", ex);
+            return ApiResponse.error(400, ex.getMessage());
         }
     }
-    
-    /**
-     * 获取流程详情
-     */
-    @Operation(summary = "获取流程详情", description = "根据ID获取流程详细信息")
+
     @GetMapping("/{id}")
+    @Operation(summary = "获取工作流详情")
     public ApiResponse<WorkflowDTO> getWorkflowById(@PathVariable Long id) {
         try {
-            WorkflowDTO workflow = workflowService.getWorkflowById(id);
-            return ApiResponse.success(workflow);
-        } catch (Exception e) {
-            log.error("获取流程失败: {}", e.getMessage());
-            return ApiResponse.error(404, e.getMessage());
+            return ApiResponse.success(workflowService.getWorkflowById(id));
+        } catch (Exception ex) {
+            log.error("Get workflow failed", ex);
+            return ApiResponse.error(404, ex.getMessage());
         }
     }
-    
-    /**
-     * 分页查询流程
-     */
-    @Operation(summary = "分页查询流程", description = "分页查询流程列表")
+
     @GetMapping
-    public ApiResponse<Page<WorkflowDTO>> getWorkflowsByPage(
-            @RequestParam(required = false) String name,
-            @RequestParam(required = false) String status,
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        Page<WorkflowDTO> workflowPage = workflowService.getWorkflowsByPage(name, status, null, page, size);
-        return ApiResponse.success(workflowPage);
+    @Operation(summary = "分页查询工作流")
+    public ApiResponse<Page<WorkflowDTO>> getWorkflowsByPage(@RequestParam(required = false) String name,
+                                                             @RequestParam(required = false) String status,
+                                                             @RequestParam(defaultValue = "1") int page,
+                                                             @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.success(workflowService.getWorkflowsByPage(name, status, null, page, size));
     }
-    
-    /**
-     * 获取所有流程
-     */
-    @Operation(summary = "获取所有流程", description = "获取所有流程列表")
+
     @GetMapping("/all")
+    @Operation(summary = "获取全部工作流")
     public ApiResponse<List<WorkflowDTO>> getAllWorkflows() {
-        List<WorkflowDTO> workflows = workflowService.getAllWorkflows();
-        return ApiResponse.success(workflows);
+        return ApiResponse.success(workflowService.getAllWorkflows());
     }
-    
-    /**
-     * 执行流程（提交到 Python Agent）
-     * 创建 ai_workflow 类型任务并异步提交，通过 /api/agent/callback 接收执行结果
-     */
-    @Operation(summary = "执行流程", description = "将已发布的流程提交到 Python Agent 异步执行")
-    @PostMapping("/{id}/execute")
-    public ApiResponse<Map<String, Object>> executeWorkflow(
-            @PathVariable Long id,
-            @RequestBody(required = false) Map<String, Object> params,
-            HttpServletRequest request) {
+
+    @GetMapping("/published-versions")
+    @Operation(summary = "获取已发布工作流版本")
+    public ApiResponse<List<WorkflowVersionDTO>> getPublishedVersions() {
+        return ApiResponse.success(workflowService.getPublishedWorkflowVersions());
+    }
+
+    @GetMapping("/versions/{id}")
+    @Operation(summary = "获取工作流版本详情")
+    public ApiResponse<WorkflowVersionDTO> getWorkflowVersion(@PathVariable Long id) {
+        return ApiResponse.success(workflowService.getWorkflowVersionById(id));
+    }
+
+    @PostMapping("/{id}/debug-runs")
+    @Operation(summary = "创建草稿调试运行")
+    public ApiResponse<WorkflowDebugRunDTO> createDebugRun(@PathVariable Long id,
+                                                           @RequestBody(required = false) Map<String, Object> payload,
+                                                           HttpServletRequest request) {
         try {
             Long userId = (Long) request.getAttribute("userId");
             String userName = (String) request.getAttribute("username");
+            workflowService.getWorkflowById(id);
 
-            WorkflowDTO workflow = workflowService.getWorkflowById(id);
-            if (!"published".equals(workflow.getStatus())) {
-                return ApiResponse.error(400, "只有已发布的流程才能执行，当前状态: " + workflow.getStatus());
+            Object inputPayload = payload != null ? payload.get("inputConfig") : null;
+            String inputConfig;
+            if (inputPayload == null) {
+                inputConfig = "{}";
+            } else if (inputPayload instanceof String text) {
+                inputConfig = text;
+            } else {
+                inputConfig = JSON.toJSONString(inputPayload);
             }
 
-            // 创建任务记录
-            String taskId = "TASK-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-                    + "-" + id;
-            Task task = new Task();
-            task.setTaskId(taskId);
-            task.setName("流程执行: " + workflow.getName());
-            task.setType("ai_workflow");
-            task.setStatus("running");
-            task.setProgress(0);
-            task.setUserId(userId);
-            task.setUserName(userName);
-            task.setDescription("执行流程: " + workflow.getName() + " (v" + workflow.getVersion() + ")");
-            task.setStartTime(LocalDateTime.now());
-
-            JSONObject paramsJson = params != null ? new JSONObject(params) : new JSONObject();
-            paramsJson.put("workflowId", id);
-            paramsJson.put("workflowCode", workflow.getWorkflowCode());
-            paramsJson.put("workflowConfig", workflow.getConfig());
-            task.setParams(paramsJson.toJSONString());
-
-            task = taskRepository.save(task);
-
-            // 提交到 Python Agent
-            agentApiClient.submitWorkflowTask(taskId, id, paramsJson);
-
-            log.info("流程 {} 已提交执行, taskId={}", workflow.getName(), taskId);
-            return ApiResponse.success("流程执行已提交", Map.of(
-                    "taskId", taskId,
-                    "taskRecordId", task.getId(),
-                    "message", "流程已异步提交，请通过任务ID查询执行状态"
-            ));
-        } catch (Exception e) {
-            log.error("执行流程失败: {}", e.getMessage());
-            return ApiResponse.error(500, "执行流程失败: " + e.getMessage());
+            var run = workflowDebugRunService.createRun(id, inputConfig, userId, userName);
+            workflowRunExecutor.executeDebugRunAsync(run.getId());
+            return ApiResponse.success("草稿调试已启动", workflowDebugRunService.toDTO(run));
+        } catch (Exception ex) {
+            log.error("Create debug run failed", ex);
+            return ApiResponse.error(400, ex.getMessage());
         }
     }
 
-    // ==================== 节点类型接口 ====================
-    
-    /**
-     * 获取所有启用的节点类型
-     */
-    @Operation(summary = "获取节点类型", description = "获取所有启用的节点类型")
+    @GetMapping("/{id}/debug-runs")
+    @Operation(summary = "获取草稿调试运行列表")
+    public ApiResponse<List<WorkflowDebugRunDTO>> getDebugRuns(@PathVariable Long id) {
+        return ApiResponse.success(workflowDebugRunService.listRuns(id));
+    }
+
+    @GetMapping("/debug-runs/{runId}")
+    @Operation(summary = "获取草稿调试运行详情")
+    public ApiResponse<WorkflowDebugRunDTO> getDebugRun(@PathVariable String runId) {
+        return ApiResponse.success(workflowDebugRunService.getByRunId(runId));
+    }
+
+    @PostMapping("/{id}/execute")
+    @Operation(summary = "兼容旧接口执行工作流")
+    public ApiResponse<Map<String, Object>> executeWorkflow(@PathVariable Long id,
+                                                            @RequestBody(required = false) Map<String, Object> params,
+                                                            HttpServletRequest request) {
+        try {
+            Long userId = (Long) request.getAttribute("userId");
+            String userName = (String) request.getAttribute("username");
+            WorkflowDTO workflow = workflowService.getWorkflowById(id);
+            if (!"published".equals(workflow.getStatus()) || workflow.getLatestVersionId() == null) {
+                return ApiResponse.error(400, "只有已发布且存在版本快照的工作流才能执行");
+            }
+
+            TaskDTO task = TaskDTO.builder()
+                    .name(workflow.getName())
+                    .workflowId(workflow.getId())
+                    .workflowVersionId(workflow.getLatestVersionId())
+                    .workflowName(workflow.getName())
+                    .workflowCategory(workflow.getCategory())
+                    .description(workflow.getDescription())
+                    .inputConfig(params != null ? JSON.toJSONString(params) : "{}")
+                    .executeType("immediate")
+                    .build();
+
+            TaskDTO created = taskService.createTask(task, userId, userName);
+            return ApiResponse.success("工作流任务已创建并启动", Map.of(
+                    "taskId", created.getTaskId(),
+                    "taskRecordId", created.getId(),
+                    "latestRunId", created.getLatestRunId()
+            ));
+        } catch (Exception ex) {
+            log.error("Execute workflow failed", ex);
+            return ApiResponse.error(500, "执行工作流失败: " + ex.getMessage());
+        }
+    }
+
     @GetMapping("/node-types")
+    @Operation(summary = "获取启用节点类型")
     public ApiResponse<List<NodeTypeDTO>> getEnabledNodeTypes() {
-        List<NodeTypeDTO> nodeTypes = nodeTypeService.getEnabledNodeTypes();
-        return ApiResponse.success(nodeTypes);
+        return ApiResponse.success(nodeTypeService.getEnabledNodeTypes());
     }
-    
-    /**
-     * 获取所有节点类型（包括禁用的）
-     */
-    @Operation(summary = "获取所有节点类型", description = "获取所有节点类型")
+
     @GetMapping("/node-types/all")
+    @Operation(summary = "获取全部节点类型")
     public ApiResponse<List<NodeTypeDTO>> getAllNodeTypes() {
-        List<NodeTypeDTO> nodeTypes = nodeTypeService.getAllNodeTypes();
-        return ApiResponse.success(nodeTypes);
+        return ApiResponse.success(nodeTypeService.getAllNodeTypes());
     }
-    
-    /**
-     * 创建节点类型
-     */
-    @Operation(summary = "创建节点类型", description = "创建新的节点类型")
+
     @PostMapping("/node-types")
+    @Operation(summary = "创建节点类型")
     public ApiResponse<NodeTypeDTO> createNodeType(@Valid @RequestBody NodeTypeDTO dto) {
         try {
-            NodeTypeDTO nodeType = nodeTypeService.createNodeType(dto);
-            return ApiResponse.success("创建节点类型成功", nodeType);
-        } catch (Exception e) {
-            log.error("创建节点类型失败: {}", e.getMessage());
-            return ApiResponse.error(400, e.getMessage());
+            return ApiResponse.success("创建节点类型成功", nodeTypeService.createNodeType(dto));
+        } catch (Exception ex) {
+            log.error("Create node type failed", ex);
+            return ApiResponse.error(400, ex.getMessage());
         }
     }
-    
-    /**
-     * 更新节点类型
-     */
-    @Operation(summary = "更新节点类型", description = "更新节点类型信息")
+
     @PutMapping("/node-types/{id}")
+    @Operation(summary = "更新节点类型")
     public ApiResponse<NodeTypeDTO> updateNodeType(@PathVariable Long id, @Valid @RequestBody NodeTypeDTO dto) {
         try {
-            NodeTypeDTO nodeType = nodeTypeService.updateNodeType(id, dto);
-            return ApiResponse.success("更新节点类型成功", nodeType);
-        } catch (Exception e) {
-            log.error("更新节点类型失败: {}", e.getMessage());
-            return ApiResponse.error(400, e.getMessage());
+            return ApiResponse.success("更新节点类型成功", nodeTypeService.updateNodeType(id, dto));
+        } catch (Exception ex) {
+            log.error("Update node type failed", ex);
+            return ApiResponse.error(400, ex.getMessage());
         }
     }
-    
-    /**
-     * 删除节点类型
-     */
-    @Operation(summary = "删除节点类型", description = "删除节点类型")
+
     @DeleteMapping("/node-types/{id}")
+    @Operation(summary = "删除节点类型")
     public ApiResponse<Void> deleteNodeType(@PathVariable Long id) {
         try {
             nodeTypeService.deleteNodeType(id);
             return ApiResponse.success("删除节点类型成功", null);
-        } catch (Exception e) {
-            log.error("删除节点类型失败: {}", e.getMessage());
-            return ApiResponse.error(400, e.getMessage());
+        } catch (Exception ex) {
+            log.error("Delete node type failed", ex);
+            return ApiResponse.error(400, ex.getMessage());
         }
     }
 }

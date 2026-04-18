@@ -54,7 +54,7 @@ public class DataInitializer implements CommandLineRunner {
         initTestRobots();
 
         // 初始化节点类型
-        initNodeTypes();
+        syncV2NodeTypes();
 
         // 初始化工作流
         initWorkflows();
@@ -492,6 +492,60 @@ public class DataInitializer implements CommandLineRunner {
     /**
      * 初始化工作流
      */
+    private void syncV2NodeTypes() {
+        upsertNodeType("start", "开始", "VideoPlay", "#1b7f5f", "基础", 1,
+                "{\"note\":\"workflow start\"}", "流程起点");
+        upsertNodeType("http_request", "HTTP 请求", "Connection", "#2f6bff", "采集", 2,
+                "{\n  \"url\": \"\",\n  \"method\": \"GET\",\n  \"headers\": {},\n  \"body\": \"\",\n  \"timeout\": 30000\n}",
+                "调用 HTTP 接口或网页请求");
+        upsertNodeType("web_crawl", "网页采集", "Monitor", "#0f9d8a", "采集", 3,
+                "{\n  \"url\": \"\",\n  \"headers\": {},\n  \"cookies\": [],\n  \"extractionRules\": [],\n  \"pagination\": {},\n  \"login\": {},\n  \"timeout\": 30000\n}",
+                "通过 Spider 服务采集网页内容");
+        upsertNodeType("ai_filter", "AI 处理", "MagicStick", "#7c4dff", "AI", 4,
+                "{\n  \"model\": \"\",\n  \"temperature\": 0.2,\n  \"systemPrompt\": \"\",\n  \"userPromptTemplate\": \"\",\n  \"outputFormat\": \"text\"\n}",
+                "同步调用 AI 模型做筛选、总结或提取");
+        upsertNodeType("condition", "条件判断", "Switch", "#8a6b2d", "逻辑", 5,
+                "{\n  \"leftPath\": \"\",\n  \"operator\": \"equals\",\n  \"rightValue\": \"\"\n}",
+                "根据上下文路径做 true/false 分支");
+        upsertNodeType("parallel_split", "并行分叉", "Share", "#d97706", "逻辑", 6,
+                "{\n  \"branches\": [\"branch_a\", \"branch_b\"]\n}",
+                "同时激活多个下游分支");
+        upsertNodeType("merge", "汇聚", "Guide", "#4b5563", "逻辑", 7,
+                "{\n  \"strategy\": \"collect\"\n}",
+                "等待多个上游分支完成后汇聚");
+        upsertNodeType("transform", "字段变换", "DataAnalysis", "#2563eb", "处理", 8,
+                "{\n  \"mappings\": {}\n}",
+                "将上游数据按字段映射输出");
+        upsertNodeType("notification", "通知", "Message", "#ef476f", "输出", 9,
+                "{\n  \"channel\": \"email\",\n  \"recipients\": \"\",\n  \"subject\": \"\",\n  \"bodyTemplate\": \"\"\n}",
+                "发送邮件或其他通知");
+        upsertNodeType("end", "结束", "VideoPause", "#dc2626", "基础", 10,
+                "{\"note\":\"workflow end\"}", "流程终点");
+
+        log.info("✅ V2 节点类型同步完成，共 {} 条", nodeTypeRepository.count());
+    }
+
+    private void upsertNodeType(String type,
+                                String name,
+                                String icon,
+                                String color,
+                                String category,
+                                int sortOrder,
+                                String defaultConfig,
+                                String description) {
+        NodeType nodeType = nodeTypeRepository.findByType(type).orElseGet(NodeType::new);
+        nodeType.setType(type);
+        nodeType.setName(name);
+        nodeType.setIcon(icon);
+        nodeType.setColor(color);
+        nodeType.setCategory(category);
+        nodeType.setSortOrder(sortOrder);
+        nodeType.setEnabled(true);
+        nodeType.setDefaultConfig(defaultConfig);
+        nodeType.setDescription(description);
+        nodeTypeRepository.save(nodeType);
+    }
+
     private void initWorkflows() {
         if (workflowRepository.count() > 0) {
             log.info("✅ 工作流已存在，跳过初始化");

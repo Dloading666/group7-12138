@@ -34,6 +34,21 @@ public class Task {
     @Column(length = 50)
     private String type;
 
+    @Column(name = "workflow_id")
+    private Long workflowId;
+
+    @Column(name = "workflow_version_id")
+    private Long workflowVersionId;
+
+    @Column(name = "workflow_version")
+    private Integer workflowVersion;
+
+    @Column(name = "workflow_name", length = 200)
+    private String workflowName;
+
+    @Column(name = "workflow_category", length = 100)
+    private String workflowCategory;
+
     @Column(nullable = false, length = 20)
     private String status = "pending";
 
@@ -76,6 +91,26 @@ public class Task {
     @Lob
     @Column(name = "params", columnDefinition = "LONGTEXT")
     private String params;
+
+    @Lob
+    @Column(name = "input_config", columnDefinition = "LONGTEXT")
+    private String inputConfig;
+
+    @Lob
+    @Column(name = "schedule_config", columnDefinition = "LONGTEXT")
+    private String scheduleConfig;
+
+    @Column(name = "latest_run_id")
+    private Long latestRunId;
+
+    @Column(name = "latest_run_status", length = 20)
+    private String latestRunStatus;
+
+    @Column(name = "last_run_time")
+    private LocalDateTime lastRunTime;
+
+    @Column(name = "next_run_time")
+    private LocalDateTime nextRunTime;
 
     @Lob
     @Column(name = "result", columnDefinition = "LONGTEXT")

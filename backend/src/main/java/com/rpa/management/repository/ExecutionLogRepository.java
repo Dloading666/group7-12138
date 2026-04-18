@@ -21,6 +21,8 @@ public interface ExecutionLogRepository extends JpaRepository<ExecutionLog, Long
      * 根据任务ID查询日志
      */
     List<ExecutionLog> findByTaskIdOrderByCreateTimeDesc(Long taskId);
+
+    List<ExecutionLog> findByTaskRunIdOrderByCreateTimeAsc(Long taskRunId);
     
     /**
      * 根据日志级别查询

@@ -2,12 +2,13 @@ package com.rpa.management.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
-import com.alibaba.fastjson2.JSONObject;
 import com.rpa.management.dto.CrawlResultDTO;
 import com.rpa.management.entity.CrawlResult;
 import com.rpa.management.entity.Task;
+import com.rpa.management.entity.TaskRun;
 import com.rpa.management.repository.CrawlResultRepository;
 import com.rpa.management.repository.TaskRepository;
+import com.rpa.management.repository.TaskRunRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -31,6 +32,7 @@ public class CrawlResultService {
 
     private final CrawlResultRepository crawlResultRepository;
     private final TaskRepository taskRepository;
+    private final TaskRunRepository taskRunRepository;
 
     @Transactional
     public void saveFromCallback(Map<String, Object> payload) {
@@ -53,11 +55,16 @@ public class CrawlResultService {
         }
 
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
+        TaskRun taskRun = taskRunRepository.findByRunId(taskId)
+                .orElseGet(() -> taskRunRepository.findByEngineRunId(taskId).orElse(null));
+        if (task == null && taskRun != null) {
+            task = taskRepository.findById(taskRun.getTaskId()).orElse(null);
+        }
 
-        CrawlResult crawlResult = crawlResultRepository.findByTaskId(taskId)
-                .orElseGet(CrawlResult::new);
+        CrawlResult crawlResult = crawlResultRepository.findByTaskId(taskId).orElseGet(CrawlResult::new);
         crawlResult.setTaskId(taskId);
         crawlResult.setTaskRecordId(task != null ? task.getId() : null);
+        crawlResult.setTaskRunId(taskRun != null ? taskRun.getId() : null);
         crawlResult.setTaskName(task != null ? task.getName() : null);
         crawlResult.setStatus(StringUtils.hasText(status) ? status : "failed");
         crawlResult.setFinalUrl(finalUrl);
@@ -75,16 +82,39 @@ public class CrawlResultService {
             return;
         }
 
+        String summary = buildTaskSummary(crawlResult);
+        LocalDateTime now = LocalDateTime.now();
+
+        if (taskRun != null) {
+            taskRun.setStatus(crawlResult.getStatus());
+            taskRun.setProgress("completed".equals(crawlResult.getStatus()) ? 100 : taskRun.getProgress());
+            taskRun.setEndTime(now);
+            if (taskRun.getStartTime() != null) {
+                taskRun.setDuration((int) Duration.between(taskRun.getStartTime(), now).getSeconds());
+            }
+            if ("completed".equals(crawlResult.getStatus())) {
+                taskRun.setErrorMessage(null);
+                taskRun.setResult(summary);
+            } else {
+                taskRun.setErrorMessage(StringUtils.hasText(errorMessage) ? errorMessage : "抓取失败");
+                taskRun.setResult("抓取失败");
+            }
+            taskRunRepository.save(taskRun);
+        }
+
         task.setStatus(crawlResult.getStatus());
+        task.setLatestRunStatus(crawlResult.getStatus());
+        task.setLatestRunId(taskRun != null ? taskRun.getId() : task.getLatestRunId());
         task.setProgress("completed".equals(crawlResult.getStatus()) ? 100 : task.getProgress());
-        task.setEndTime(LocalDateTime.now());
+        task.setLastRunTime(now);
+        task.setEndTime(now);
         if (task.getStartTime() != null) {
             task.setDuration((int) Duration.between(task.getStartTime(), task.getEndTime()).getSeconds());
         }
 
         if ("completed".equals(crawlResult.getStatus())) {
             task.setErrorMessage(null);
-            task.setResult(buildTaskSummary(crawlResult));
+            task.setResult(summary);
         } else {
             task.setErrorMessage(StringUtils.hasText(errorMessage) ? errorMessage : "抓取失败");
             task.setResult("抓取失败");
@@ -119,6 +149,12 @@ public class CrawlResultService {
         return toDto(crawlResult);
     }
 
+    public CrawlResultDTO getResultByTaskRunId(Long taskRunId) {
+        CrawlResult crawlResult = crawlResultRepository.findByTaskRunId(taskRunId)
+                .orElseThrow(() -> new RuntimeException("未找到抓取结果: " + taskRunId));
+        return toDto(crawlResult);
+    }
+
     @Transactional
     public void deleteByTaskId(String taskId) {
         crawlResultRepository.deleteByTaskId(taskId);
@@ -134,6 +170,7 @@ public class CrawlResultService {
         return CrawlResultDTO.builder()
                 .id(crawlResult.getId())
                 .taskRecordId(crawlResult.getTaskRecordId())
+                .taskRunId(crawlResult.getTaskRunId())
                 .taskId(crawlResult.getTaskId())
                 .taskName(crawlResult.getTaskName())
                 .finalUrl(crawlResult.getFinalUrl())
@@ -176,7 +213,7 @@ public class CrawlResultService {
         if (!StringUtils.hasText(title)) {
             title = "真实网站抓取完成";
         }
-        return String.format("抓取完成：%s（%d 条，%d 页）",
+        return String.format("抓取完成（%s，%d 条，%d 页）",
                 title,
                 crawlResult.getTotalCount() != null ? crawlResult.getTotalCount() : 0,
                 crawlResult.getCrawledPages() != null ? crawlResult.getCrawledPages() : 0);

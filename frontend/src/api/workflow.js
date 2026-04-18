@@ -124,3 +124,55 @@ export function deleteWorkflow(id) {
     method: 'delete'
   })
 }
+
+export function getPublishedWorkflowVersions(config = {}) {
+  return request({
+    url: '/workflows/published-versions',
+    method: 'get',
+    ...config
+  })
+}
+
+export function getWorkflowVersion(id, config = {}) {
+  return request({
+    url: `/workflows/versions/${id}`,
+    method: 'get',
+    ...config
+  })
+}
+
+export function createWorkflowDraft(data, config = {}) {
+  return request({
+    url: '/workflow-assistant/drafts',
+    method: 'post',
+    data,
+    timeout: 180000,
+    ...config
+  })
+}
+
+export function createWorkflowDebugRun(id, data = {}, config = {}) {
+  return request({
+    url: `/workflows/${id}/debug-runs`,
+    method: 'post',
+    data,
+    timeout: 180000,
+    ...config
+  })
+}
+
+export function getWorkflowDebugRuns(id, config = {}) {
+  return request({
+    url: `/workflows/${id}/debug-runs`,
+    method: 'get',
+    ...config
+  })
+}
+
+export function getWorkflowDebugRunDetail(runId, config = {}) {
+  return request({
+    url: `/workflows/debug-runs/${runId}`,
+    method: 'get',
+    ...config
+  })
+}

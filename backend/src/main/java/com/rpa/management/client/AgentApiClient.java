@@ -122,11 +122,17 @@ public class AgentApiClient {
     }
 
     public String chatCompletion(List<Map<String, String>> messages) {
+        return chatCompletion(messages, null);
+    }
+
+    public String chatCompletion(List<Map<String, String>> messages, String modelOverride) {
         Map<String, Object> payload = new HashMap<>();
-        payload.put("model", "gpt-4o-mini");
+        if (modelOverride != null && !modelOverride.isBlank()) {
+            payload.put("model", modelOverride);
+        }
         payload.put("messages", messages);
         payload.put("temperature", 0.1);
-        payload.put("max_tokens", 128);
+        payload.put("max_tokens", 512);
 
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(
