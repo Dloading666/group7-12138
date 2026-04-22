@@ -116,7 +116,7 @@ public class WorkflowService {
         version.setPublishStatus("published");
         version.setUserId(workflow.getUserId());
         version.setUserName(workflow.getUserName());
-        version.setInputSchema(normalizeInputSchema(workflow.getInputSchema()));
+        version.setInputSchema(normalizeInputSchema(workflow.getInputSchema(), graph));
         version.setGraph(graph);
         version = workflowVersionRepository.save(version);
 
@@ -184,10 +184,11 @@ public class WorkflowService {
             ObjectNode root = readGraphObject(rawGraph);
             ArrayNode normalizedNodes = objectMapper.createArrayNode();
             ArrayNode normalizedEdges = objectMapper.createArrayNode();
+            ObjectNode robotBindings = normalizeRobotBindings(root.path("robotBindings"));
 
             JsonNode rawNodes = root.path("nodes");
             if (!rawNodes.isArray() || rawNodes.isEmpty()) {
-                return defaultGraph();
+                return defaultGraph(robotBindings);
             }
 
             Map<String, ObjectNode> nodeMap = new LinkedHashMap<>();
@@ -251,12 +252,13 @@ public class WorkflowService {
 
             ObjectNode normalized = objectMapper.createObjectNode();
             normalized.put("version", 2);
+            normalized.set("robotBindings", robotBindings);
             normalized.set("nodes", normalizedNodes);
             normalized.set("edges", normalizedEdges);
             return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(normalized);
         } catch (Exception ex) {
             log.warn("Failed to normalize workflow graph", ex);
-            return defaultGraph();
+            return defaultGraph(emptyRobotBindings());
         }
     }
 
@@ -374,7 +376,11 @@ public class WorkflowService {
 
     private void applyDefinition(Workflow workflow, WorkflowDTO dto) {
         String normalizedGraph = normalizeGraph(firstNonBlank(dto.getGraph(), dto.getConfig()));
-        workflow.setInputSchema(normalizeInputSchema(dto.getInputSchema()));
+        RobotBindingsSnapshot requestedBindings = RobotBindingsSnapshot.from(dto);
+        if (requestedBindings.hasAny()) {
+            normalizedGraph = applyRobotBindings(normalizedGraph, requestedBindings);
+        }
+        workflow.setInputSchema(normalizeInputSchema(dto.getInputSchema(), normalizedGraph));
         workflow.setGraph(normalizedGraph);
         workflow.setConfig(normalizedGraph);
     }
@@ -530,13 +536,13 @@ public class WorkflowService {
     private ObjectNode readGraphObject(String rawGraph) {
         try {
             if (!StringUtils.hasText(rawGraph)) {
-                return (ObjectNode) objectMapper.readTree(defaultGraph());
+                return (ObjectNode) objectMapper.readTree(defaultGraph(emptyRobotBindings()));
             }
             JsonNode parsed = objectMapper.readTree(rawGraph);
             if (parsed instanceof ObjectNode objectNode) {
                 return objectNode;
             }
-            return (ObjectNode) objectMapper.readTree(defaultGraph());
+            return (ObjectNode) objectMapper.readTree(defaultGraph(emptyRobotBindings()));
         } catch (Exception ex) {
             throw new RuntimeException("Invalid workflow graph payload", ex);
         }
@@ -566,19 +572,40 @@ public class WorkflowService {
         return StringUtils.hasText(targetHandle) ? targetHandle : "in";
     }
 
-    private String normalizeInputSchema(String inputSchema) {
-        if (!StringUtils.hasText(inputSchema)) {
-            return """
-                    {
-                      "type": "object",
-                      "properties": {},
-                      "required": []
-                    }
-                    """.trim();
+    private String normalizeInputSchema(String inputSchema, String graph) {
+        ObjectNode schema = defaultInputSchemaObject();
+        if (StringUtils.hasText(inputSchema)) {
+            try {
+                JsonNode parsed = objectMapper.readTree(inputSchema);
+                if (parsed instanceof ObjectNode objectNode) {
+                    schema = objectNode.deepCopy();
+                }
+            } catch (Exception ex) {
+                schema = defaultInputSchemaObject();
+            }
         }
+
+        schema.put("type", "object");
+        ObjectNode properties = schema.path("properties") instanceof ObjectNode objectNode
+                ? objectNode
+                : objectMapper.createObjectNode();
+        schema.set("properties", properties);
+        ArrayNode required = schema.path("required") instanceof ArrayNode arrayNode
+                ? arrayNode
+                : objectMapper.createArrayNode();
+        schema.set("required", required);
+
+        if (graphRequiresRecipientInput(graph) && !properties.has("to_email")) {
+            ObjectNode toEmail = objectMapper.createObjectNode();
+            toEmail.put("type", "string");
+            toEmail.put("title", "目标发送邮箱");
+            toEmail.put("description", "收件人邮箱");
+            toEmail.put("format", "email");
+            properties.set("to_email", toEmail);
+        }
+
         try {
-            JsonNode parsed = objectMapper.readTree(inputSchema);
-            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(parsed);
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(schema);
         } catch (Exception ex) {
             return """
                     {
@@ -604,10 +631,84 @@ public class WorkflowService {
         };
     }
 
-    private String defaultGraph() {
+    private ObjectNode defaultInputSchemaObject() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        schema.set("properties", objectMapper.createObjectNode());
+        schema.set("required", objectMapper.createArrayNode());
+        return schema;
+    }
+
+    private boolean graphRequiresRecipientInput(String graph) {
+        if (!StringUtils.hasText(graph)) {
+            return false;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(graph);
+            JsonNode nodes = root.path("nodes");
+            if (!nodes.isArray()) {
+                return false;
+            }
+            for (JsonNode node : nodes) {
+                if (!"http_request".equals(normalizeNodeType(node.path("type").asText()))) {
+                    continue;
+                }
+                JsonNode config = node.path("config");
+                if (looksLikeResendEmailNode(config) || looksLikeLegacyEmailNode(config)) {
+                    return true;
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to infer recipient input from workflow graph", ex);
+        }
+        return false;
+    }
+
+    private boolean looksLikeResendEmailNode(JsonNode config) {
+        return config != null
+                && config.isObject()
+                && "resend_email".equalsIgnoreCase(config.path("provider").asText());
+    }
+
+    private boolean looksLikeLegacyEmailNode(JsonNode config) {
+        if (config == null || !config.isObject()) {
+            return false;
+        }
+        String url = config.path("url").asText("");
+        if (StringUtils.hasText(url) && (url.contains("api.resend.com/emails") || url.contains("api.mail-service.com/send"))) {
+            return true;
+        }
+
+        String body = config.path("body").asText("");
+        if (StringUtils.hasText(body)
+                && body.contains("\"subject\"")
+                && (body.contains("\"text\"") || body.contains("\"html\"") || body.contains("\"content\"") || body.contains("\"body\""))) {
+            return true;
+        }
+
+        JsonNode headers = config.path("headers");
+        JsonNode authorization = headers.path("Authorization");
+        if (authorization.isMissingNode() || authorization.isNull()) {
+            authorization = headers.path("authorization");
+        }
+        if (authorization.isTextual() && authorization.asText().contains("RESEND_API_KEY")) {
+            return true;
+        }
+
+        return (config.hasNonNull("to") || body.contains("\"to\""))
+                && (config.hasNonNull("subjectTemplate") || config.hasNonNull("subject") || body.contains("\"subject\""))
+                && (config.hasNonNull("textTemplate")
+                || config.hasNonNull("bodyTemplate")
+                || config.hasNonNull("text")
+                || config.hasNonNull("body")
+                || config.hasNonNull("html"));
+    }
+
+    private String defaultGraph(ObjectNode robotBindings) {
         return """
                 {
                   "version": 2,
+                  "robotBindings": %s,
                   "nodes": [
                     {
                       "id": "start_1",
@@ -636,7 +737,7 @@ public class WorkflowService {
                     }
                   ]
                 }
-                """.trim();
+                """.formatted(robotBindings.toPrettyString()).trim();
     }
 
     private com.rpa.management.dto.WorkflowNodeDTO toLegacyNodeDTO(WorkflowNode node) {
@@ -672,7 +773,11 @@ public class WorkflowService {
         dto.setPublishTime(workflow.getPublishTime());
         dto.setConfig(normalizeGraph(workflow.getConfig()));
         dto.setGraph(normalizeGraph(firstNonBlank(workflow.getGraph(), workflow.getConfig())));
-        dto.setInputSchema(normalizeInputSchema(workflow.getInputSchema()));
+        dto.setInputSchema(normalizeInputSchema(workflow.getInputSchema(), dto.getGraph()));
+        RobotBindingsSnapshot bindings = extractRobotBindings(dto.getGraph());
+        dto.setCrawlRobotId(bindings.crawlRobotId());
+        dto.setAnalysisRobotId(bindings.analysisRobotId());
+        dto.setNotificationRobotId(bindings.notificationRobotId());
         dto.setLatestVersionId(workflow.getLatestVersionId());
         dto.setCreateTime(workflow.getCreateTime());
         dto.setUpdateTime(workflow.getUpdateTime());
@@ -681,6 +786,8 @@ public class WorkflowService {
     }
 
     public WorkflowVersionDTO toVersionDTO(WorkflowVersion version) {
+        String normalizedGraph = normalizeGraph(version.getGraph());
+        RobotBindingsSnapshot bindings = extractRobotBindings(normalizedGraph);
         return WorkflowVersionDTO.builder()
                 .id(version.getId())
                 .workflowId(version.getWorkflowId())
@@ -693,9 +800,39 @@ public class WorkflowService {
                 .userId(version.getUserId())
                 .userName(version.getUserName())
                 .publishTime(version.getPublishTime())
-                .inputSchema(normalizeInputSchema(version.getInputSchema()))
-                .graph(normalizeGraph(version.getGraph()))
+                .inputSchema(normalizeInputSchema(version.getInputSchema(), normalizedGraph))
+                .graph(normalizedGraph)
+                .crawlRobotId(bindings.crawlRobotId())
+                .analysisRobotId(bindings.analysisRobotId())
+                .notificationRobotId(bindings.notificationRobotId())
                 .build();
+    }
+
+    private String applyRobotBindings(String normalizedGraph, RobotBindingsSnapshot bindings) {
+        try {
+            ObjectNode root = readGraphObject(normalizedGraph);
+            root.set("robotBindings", bindings.toObjectNode(objectMapper));
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+        } catch (Exception ex) {
+            log.warn("Failed to apply robot bindings to workflow graph", ex);
+            return normalizedGraph;
+        }
+    }
+
+    private RobotBindingsSnapshot extractRobotBindings(String graph) {
+        try {
+            return RobotBindingsSnapshot.from(readGraphObject(graph).path("robotBindings"));
+        } catch (Exception ex) {
+            return RobotBindingsSnapshot.empty();
+        }
+    }
+
+    private ObjectNode normalizeRobotBindings(JsonNode rawBindings) {
+        return RobotBindingsSnapshot.from(rawBindings).toObjectNode(objectMapper);
+    }
+
+    private ObjectNode emptyRobotBindings() {
+        return RobotBindingsSnapshot.empty().toObjectNode(objectMapper);
     }
 
     private Integer calculateStepCount(String graph) {
@@ -738,5 +875,67 @@ public class WorkflowService {
 
     private String emptyToNull(String value) {
         return StringUtils.hasText(value) ? value : null;
+    }
+
+    private record RobotBindingsSnapshot(Long crawlRobotId, Long analysisRobotId, Long notificationRobotId) {
+        private static RobotBindingsSnapshot empty() {
+            return new RobotBindingsSnapshot(null, null, null);
+        }
+
+        private static RobotBindingsSnapshot from(WorkflowDTO dto) {
+            return new RobotBindingsSnapshot(dto.getCrawlRobotId(), dto.getAnalysisRobotId(), dto.getNotificationRobotId());
+        }
+
+        private static RobotBindingsSnapshot from(JsonNode rawBindings) {
+            if (rawBindings == null || !rawBindings.isObject()) {
+                return empty();
+            }
+            return new RobotBindingsSnapshot(
+                    asLong(rawBindings.get("crawlRobotId")),
+                    asLong(rawBindings.get("analysisRobotId")),
+                    asLong(rawBindings.get("notificationRobotId"))
+            );
+        }
+
+        private static Long asLong(JsonNode value) {
+            if (value == null || value.isNull()) {
+                return null;
+            }
+            if (value.isNumber()) {
+                return value.asLong();
+            }
+            if (value.isTextual() && StringUtils.hasText(value.asText())) {
+                try {
+                    return Long.parseLong(value.asText());
+                } catch (NumberFormatException ignored) {
+                    return null;
+                }
+            }
+            return null;
+        }
+
+        private boolean hasAny() {
+            return crawlRobotId != null || analysisRobotId != null || notificationRobotId != null;
+        }
+
+        private ObjectNode toObjectNode(ObjectMapper objectMapper) {
+            ObjectNode node = objectMapper.createObjectNode();
+            if (crawlRobotId != null) {
+                node.put("crawlRobotId", crawlRobotId);
+            } else {
+                node.putNull("crawlRobotId");
+            }
+            if (analysisRobotId != null) {
+                node.put("analysisRobotId", analysisRobotId);
+            } else {
+                node.putNull("analysisRobotId");
+            }
+            if (notificationRobotId != null) {
+                node.put("notificationRobotId", notificationRobotId);
+            } else {
+                node.putNull("notificationRobotId");
+            }
+            return node;
+        }
     }
 }

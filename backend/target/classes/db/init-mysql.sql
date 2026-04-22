@@ -1,6 +1,8 @@
 -- =============================================
--- MySQL 完整初始化脚本（包含建表+初始化数据）
+-- MySQL 全量初始化脚本（含 CREATE DATABASE + 建表 + 初始数据）
+-- 用途：全新 MySQL 环境一键安装，会自动创建 management_system 数据库
 -- 使用方法：mysql -u root -p < init-mysql.sql
+-- 与 init-database.sql 的区别：本文件额外包含 CREATE DATABASE 语句
 -- =============================================
 
 -- 创建数据库
@@ -103,16 +105,23 @@ CREATE TABLE sys_task (
     status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态',
     progress INT DEFAULT 0 COMMENT '进度(0-100)',
     robot_id BIGINT COMMENT '执行机器人ID',
-    params TEXT COMMENT '任务参数(JSON)',
-    result TEXT COMMENT '执行结果',
+    robot_name VARCHAR(50) COMMENT '执行机器人名称',
+    params LONGTEXT COMMENT '任务参数(JSON)',
+    description LONGTEXT COMMENT '任务描述',
+    result LONGTEXT COMMENT '执行结果',
+    error_message LONGTEXT COMMENT '错误信息',
     priority VARCHAR(20) DEFAULT 'medium' COMMENT '优先级',
     execute_type VARCHAR(20) DEFAULT 'immediate' COMMENT '执行方式',
-    schedule_time DATETIME COMMENT '定时执行时间',
+    scheduled_time DATETIME COMMENT '定时执行时间',
     user_id BIGINT COMMENT '创建用户ID',
+    user_name VARCHAR(50) COMMENT '创建用户名',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     start_time DATETIME COMMENT '开始时间',
     end_time DATETIME COMMENT '结束时间',
     duration INT COMMENT '耗时(秒)',
+    tax_id VARCHAR(50) COMMENT '税号',
+    enterprise_name VARCHAR(200) COMMENT '企业名称',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     
     INDEX idx_task_id (task_id),
     INDEX idx_status (status),
@@ -122,6 +131,30 @@ CREATE TABLE sys_task (
 -- =============================================
 -- 6. 机器人表
 -- =============================================
+DROP TABLE IF EXISTS sys_crawl_result;
+
+CREATE TABLE sys_crawl_result (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '抓取结果ID',
+    task_record_id BIGINT COMMENT '任务主表ID',
+    task_id VARCHAR(50) NOT NULL UNIQUE COMMENT '任务编号',
+    task_name VARCHAR(100) COMMENT '任务名称',
+    final_url VARCHAR(1000) COMMENT '最终URL',
+    title VARCHAR(500) COMMENT '页面标题',
+    summary_text LONGTEXT COMMENT '正文摘要',
+    raw_html LONGTEXT COMMENT '原始HTML',
+    structured_data LONGTEXT COMMENT '结构化结果',
+    total_count INT DEFAULT 0 COMMENT '结果条数',
+    crawled_pages INT DEFAULT 0 COMMENT '抓取页数',
+    status VARCHAR(20) DEFAULT 'pending' COMMENT '状态',
+    error_message LONGTEXT COMMENT '错误信息',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+    INDEX idx_crawl_result_task_record_id (task_record_id),
+    INDEX idx_crawl_result_status (status),
+    INDEX idx_crawl_result_create_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='真实网站抓取结果表';
+
 DROP TABLE IF EXISTS sys_robot;
 
 CREATE TABLE sys_robot (

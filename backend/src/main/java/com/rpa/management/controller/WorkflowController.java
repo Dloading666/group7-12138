@@ -196,10 +196,11 @@ public class WorkflowController {
                     .build();
 
             TaskDTO created = taskService.createTask(task, userId, userName);
+            TaskDTO started = taskService.startTask(created.getId());
             return ApiResponse.success("工作流任务已创建并启动", Map.of(
-                    "taskId", created.getTaskId(),
-                    "taskRecordId", created.getId(),
-                    "latestRunId", created.getLatestRunId()
+                    "taskId", started.getTaskId(),
+                    "taskRecordId", started.getId(),
+                    "latestRunId", started.getLatestRunId()
             ));
         } catch (Exception ex) {
             log.error("Execute workflow failed", ex);

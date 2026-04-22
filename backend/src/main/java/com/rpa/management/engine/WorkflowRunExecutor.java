@@ -8,10 +8,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rpa.management.client.AgentApiClient;
 import com.rpa.management.client.SpiderApiClient;
 import com.rpa.management.dto.CrawlResultDTO;
+import com.rpa.management.entity.Robot;
 import com.rpa.management.entity.Task;
 import com.rpa.management.entity.TaskRun;
 import com.rpa.management.entity.WorkflowDebugRun;
 import com.rpa.management.entity.WorkflowStepRun;
+import com.rpa.management.repository.RobotRepository;
 import com.rpa.management.service.CrawlResultService;
 import com.rpa.management.service.ExecutionLogService;
 import com.rpa.management.service.TaskRunService;
@@ -20,6 +22,7 @@ import com.rpa.management.service.WorkflowService;
 import com.rpa.management.service.WorkflowStepRunService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -47,6 +50,11 @@ import java.util.regex.Pattern;
 public class WorkflowRunExecutor {
 
     private static final Pattern TEMPLATE_PATTERN = Pattern.compile("\\{\\{\\s*([^{}]+?)\\s*}}");
+    private static final Pattern QUOTED_TEMPLATE_PATTERN = Pattern.compile("\"\\{\\{\\s*([^{}]+?)\\s*}}\"");
+    private static final Pattern JSON_STRING_FIELD_PATTERN = Pattern.compile(
+            "\"(subject|body)\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+    );
 
     private final TaskRunService taskRunService;
     private final WorkflowDebugRunService workflowDebugRunService;
@@ -56,8 +64,13 @@ public class WorkflowRunExecutor {
     private final SpiderApiClient spiderApiClient;
     private final AgentApiClient agentApiClient;
     private final CrawlResultService crawlResultService;
+    private final RobotRepository robotRepository;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    @Value("${mail.resend.api-key:}")
+    private String resendApiKey;
+    @Value("${mail.resend.from-email:}")
+    private String resendFromEmail;
 
     public void execute(Task task, TaskRun run) {
         executeInternal(buildTaskContext(task, run));
@@ -105,14 +118,17 @@ public class WorkflowRunExecutor {
             }
 
             @Override
-            public WorkflowStepRun createStepRun(GraphNode node, String branchKey, String inputSnapshot) {
+            public WorkflowStepRun createStepRun(GraphNode node, String branchKey, String inputSnapshot, BoundRobot robot) {
                 return workflowStepRunService.createTaskStepRun(
                         run.getId(),
                         node.id,
                         node.type,
                         node.label,
                         branchKey,
-                        inputSnapshot
+                        inputSnapshot,
+                        robot != null ? robot.id() : null,
+                        robot != null ? robot.name() : null,
+                        robot != null ? robot.type() : null
                 );
             }
 
@@ -166,14 +182,17 @@ public class WorkflowRunExecutor {
             }
 
             @Override
-            public WorkflowStepRun createStepRun(GraphNode node, String branchKey, String inputSnapshot) {
+            public WorkflowStepRun createStepRun(GraphNode node, String branchKey, String inputSnapshot, BoundRobot robot) {
                 return workflowStepRunService.createDebugStepRun(
                         debugRun.getId(),
                         node.id,
                         node.type,
                         node.label,
                         branchKey,
-                        inputSnapshot
+                        inputSnapshot,
+                        robot != null ? robot.id() : null,
+                        robot != null ? robot.name() : null,
+                        robot != null ? robot.type() : null
                 );
             }
 
@@ -243,10 +262,12 @@ public class WorkflowRunExecutor {
 
             boolean hasChosenIncoming = incoming.isEmpty() || incoming.stream().anyMatch(edge -> "chosen".equals(edge.status));
             if (!hasChosenIncoming) {
+                BoundRobot boundRobot = resolveBoundRobot(graphModel.robotBindings, node);
                 WorkflowStepRun skippedStep = parentContext.createStepRun(
                         node,
                         resolveBranchKey(incoming),
-                        buildNodeInputSnapshot(context, node, incoming)
+                        buildNodeInputSnapshot(context, node, incoming),
+                        boundRobot
                 );
                 workflowStepRunService.skip(skippedStep.getId(), "{\"skipped\":true}");
                 rememberNodeResult(context, node, "skipped", JSONObject.of("skipped", true), resolveBranchKey(incoming));
@@ -258,7 +279,8 @@ public class WorkflowRunExecutor {
 
             String branchKey = resolveBranchKey(incoming);
             String inputSnapshot = buildNodeInputSnapshot(context, node, incoming);
-            WorkflowStepRun stepRun = parentContext.createStepRun(node, branchKey, inputSnapshot);
+            BoundRobot boundRobot = resolveBoundRobot(graphModel.robotBindings, node);
+            WorkflowStepRun stepRun = parentContext.createStepRun(node, branchKey, inputSnapshot, boundRobot);
             workflowStepRunService.start(stepRun);
             executionLogService.info(
                     parentContext.logTaskId(),
@@ -267,7 +289,7 @@ public class WorkflowRunExecutor {
                     parentContext.logTaskName(),
                     null,
                     null,
-                    "Execute workflow node: " + node.id + " / " + node.type
+                    "Execute workflow node: " + node.id + " / " + node.type + formatRobotLogSuffix(boundRobot)
             );
 
             try {
@@ -414,6 +436,15 @@ public class WorkflowRunExecutor {
 
     private NodeExecutionResult executeHttpNode(JSONObject context, GraphNode node) {
         JSONObject config = node.config;
+        String provider = config.getString("provider");
+        if ("resend_email".equalsIgnoreCase(provider)) {
+            return executeResendEmailNode(context, config);
+        }
+        JSONObject compatibleResendConfig = adaptLegacyResendConfig(config);
+        if (compatibleResendConfig != null) {
+            return executeResendEmailNode(context, compatibleResendConfig);
+        }
+
         String url = resolveString(config.getString("url"), context);
         if (!StringUtils.hasText(url)) {
             throw new RuntimeException("HTTP node url is required");
@@ -435,12 +466,183 @@ public class WorkflowRunExecutor {
 
         Object body = config.get("body");
         if (body instanceof String textBody) {
-            body = renderTemplate(textBody, context);
+            body = isJsonRequest(headers, textBody)
+                    ? renderJsonTemplate(textBody, context)
+                    : renderTemplate(textBody, context);
         }
         HttpEntity<Object> requestEntity = new HttpEntity<>(body, headers);
         ResponseEntity<String> response = restTemplate.exchange(url, method, requestEntity, String.class);
 
         JSONObject output = new JSONObject();
+        output.put("statusCode", response.getStatusCode().value());
+        output.put("body", response.getBody());
+        output.put("headers", response.getHeaders().toSingleValueMap());
+        return NodeExecutionResult.success(output, Set.of("success", "out"));
+    }
+
+    private JSONObject adaptLegacyResendConfig(JSONObject config) {
+        if (!looksLikeLegacyResendHttpNode(config)) {
+            return null;
+        }
+
+        JSONObject adapted = new JSONObject();
+        adapted.put("provider", "resend_email");
+        String legacyUrl = config.getString("url");
+        adapted.put("url", looksLikePlaceholderMailServiceUrl(legacyUrl)
+                ? "https://api.resend.com/emails"
+                : firstNonBlank(legacyUrl, "https://api.resend.com/emails"));
+        adapted.put("method", "POST");
+        adapted.put("headers", new JSONObject());
+        adapted.put("body", "");
+        adapted.put("timeout", config.getInteger("timeout") != null ? config.getInteger("timeout") : 30000);
+
+        JSONObject bodyConfig = parseJsonObject(config.get("body"));
+        String to = firstNonBlank(
+                config.getString("to"),
+                extractStringValue(bodyConfig, "to")
+        );
+        String subjectTemplate = firstNonBlank(
+                config.getString("subjectTemplate"),
+                config.getString("subject"),
+                extractStringValue(bodyConfig, "subject"),
+                extractStringValue(bodyConfig, "title")
+        );
+        String textTemplate = firstNonBlank(
+                config.getString("textTemplate"),
+                config.getString("bodyTemplate"),
+                config.getString("text"),
+                config.getString("body"),
+                extractStringValue(bodyConfig, "text"),
+                extractStringValue(bodyConfig, "content"),
+                extractStringValue(bodyConfig, "body")
+        );
+        String htmlTemplate = firstNonBlank(
+                config.getString("htmlTemplate"),
+                config.getString("html"),
+                extractStringValue(bodyConfig, "html")
+        );
+
+        adapted.put("to", looksLikeTemplateValue(to) ? to : "{{ input.to_email }}");
+        if (StringUtils.hasText(to) && !looksLikeTemplateValue(to)) {
+            adapted.put("defaultTo", to);
+        }
+        adapted.put("subjectTemplate", firstNonBlank(subjectTemplate, "网站采集通知"));
+        adapted.put("textTemplate", firstNonBlank(textTemplate, ""));
+        adapted.put("htmlTemplate", firstNonBlank(htmlTemplate, ""));
+        return adapted;
+    }
+
+    private boolean looksLikeLegacyResendHttpNode(JSONObject config) {
+        if (config == null) {
+            return false;
+        }
+        String url = config.getString("url");
+        if (StringUtils.hasText(url) && (url.contains("api.resend.com/emails") || looksLikePlaceholderMailServiceUrl(url))) {
+            return true;
+        }
+        JSONObject headers = parseJsonObject(config.get("headers"));
+        if (headers != null) {
+            Object authorization = headers.get("Authorization");
+            if (authorization == null) {
+                authorization = headers.get("authorization");
+            }
+            if (authorization != null && String.valueOf(authorization).contains("RESEND_API_KEY")) {
+                return true;
+            }
+        }
+        String body = config.getString("body");
+        if (StringUtils.hasText(body)
+                && body.contains("\"subject\"")
+                && (body.contains("\"html\"") || body.contains("\"text\"") || body.contains("\"content\"") || body.contains("\"body\""))) {
+            return true;
+        }
+
+        JSONObject bodyConfig = parseJsonObject(config.get("body"));
+        return StringUtils.hasText(firstNonBlank(config.getString("to"), extractStringValue(bodyConfig, "to")))
+                && StringUtils.hasText(firstNonBlank(
+                config.getString("subjectTemplate"),
+                config.getString("subject"),
+                extractStringValue(bodyConfig, "subject"),
+                extractStringValue(bodyConfig, "title")
+        ))
+                && StringUtils.hasText(firstNonBlank(
+                config.getString("textTemplate"),
+                config.getString("bodyTemplate"),
+                config.getString("text"),
+                config.getString("body"),
+                config.getString("html"),
+                extractStringValue(bodyConfig, "text"),
+                extractStringValue(bodyConfig, "content"),
+                extractStringValue(bodyConfig, "body"),
+                extractStringValue(bodyConfig, "html")
+        ));
+    }
+
+    private NodeExecutionResult executeResendEmailNode(JSONObject context, JSONObject config) {
+        if (!StringUtils.hasText(resendApiKey)) {
+            throw new RuntimeException("RESEND_API_KEY is not configured");
+        }
+        if (!StringUtils.hasText(resendFromEmail)) {
+            throw new RuntimeException("RESEND_FROM_EMAIL is not configured");
+        }
+
+        String toEmail = resolveString(firstNonBlank(config.getString("to"), "{{ input.to_email }}"), context);
+        if (!StringUtils.hasText(toEmail)) {
+            toEmail = resolveString(config.getString("defaultTo"), context);
+        }
+        if (!StringUtils.hasText(toEmail)) {
+            throw new RuntimeException("Resend email recipient is required");
+        }
+
+        String subject = resolveString(
+                firstNonBlank(config.getString("subjectTemplate"), "网站采集通知"),
+                context,
+                "网站采集通知"
+        );
+        String text = resolveString(config.getString("textTemplate"), context);
+        String html = resolveString(config.getString("htmlTemplate"), context);
+        if (!StringUtils.hasText(text) && !StringUtils.hasText(html)) {
+            throw new RuntimeException("Resend email requires textTemplate or htmlTemplate");
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(resendApiKey);
+
+        JSONObject extraHeaders = parseJsonObject(config.get("headers"));
+        if (extraHeaders != null) {
+            extraHeaders.forEach((key, value) -> {
+                String headerName = String.valueOf(key);
+                if ("authorization".equalsIgnoreCase(headerName) || "content-type".equalsIgnoreCase(headerName)) {
+                    return;
+                }
+                headers.add(headerName, renderTemplate(String.valueOf(value), context));
+            });
+        }
+
+        JSONObject body = new JSONObject();
+        body.put("from", resendFromEmail);
+        JSONArray recipients = new JSONArray();
+        recipients.add(toEmail);
+        body.put("to", recipients);
+        body.put("subject", subject);
+        if (StringUtils.hasText(html)) {
+            body.put("html", html);
+        }
+        if (StringUtils.hasText(text)) {
+            body.put("text", text);
+        }
+
+        String url = firstNonBlank(config.getString("url"), "https://api.resend.com/emails");
+        ResponseEntity<String> response = restTemplate.exchange(
+                url,
+                HttpMethod.POST,
+                new HttpEntity<>(body.toJSONString(), headers),
+                String.class
+        );
+
+        JSONObject output = new JSONObject();
+        output.put("provider", "resend_email");
         output.put("statusCode", response.getStatusCode().value());
         output.put("body", response.getBody());
         output.put("headers", response.getHeaders().toSingleValueMap());
@@ -457,7 +659,7 @@ public class WorkflowRunExecutor {
             crawlConfig.put("cookies", parseJsonArray(config.get("cookies")));
         }
         if (config.get("extractionRules") != null) {
-            crawlConfig.put("extractionRules", parseJsonArray(config.get("extractionRules")));
+            crawlConfig.put("extractionRules", normalizeExtractionRules(config.get("extractionRules")));
         }
         if (config.get("pagination") != null) {
             crawlConfig.put("pagination", parseJsonObject(config.get("pagination")));
@@ -524,18 +726,16 @@ public class WorkflowRunExecutor {
             userPrompt = value == null ? "{}" : JSON.toJSONString(value);
         }
 
+        Integer maxTokens = config.getInteger("maxTokens");
         String raw = agentApiClient.chatCompletion(List.of(
                 Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", userPrompt)
-        ), model);
+        ), model, maxTokens != null && maxTokens > 0 ? maxTokens : 1024);
 
         String outputFormat = config.getString("outputFormat");
         Object structured = null;
         if ("json".equalsIgnoreCase(outputFormat)) {
-            try {
-                structured = JSON.parse(raw);
-            } catch (Exception ignored) {
-            }
+            structured = parseStructuredOutput(raw);
         }
 
         JSONObject wrapped = new JSONObject();
@@ -543,6 +743,78 @@ public class WorkflowRunExecutor {
         wrapped.put("content", raw);
         wrapped.put("structured", structured);
         return NodeExecutionResult.success(wrapped, Set.of("success", "out"));
+    }
+
+    private Object parseStructuredOutput(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+
+        try {
+            return JSON.parse(raw);
+        } catch (Exception ignored) {
+        }
+
+        String text = raw.trim();
+        if (text.startsWith("```")) {
+            text = text.replaceFirst("^```(?:json)?\\s*", "");
+            text = text.replaceFirst("\\s*```$", "");
+            try {
+                return JSON.parse(text.trim());
+            } catch (Exception ignored) {
+            }
+        }
+
+        int objectStart = text.indexOf('{');
+        int objectEnd = text.lastIndexOf('}');
+        if (objectStart >= 0 && objectEnd > objectStart) {
+            try {
+                return JSON.parse(text.substring(objectStart, objectEnd + 1));
+            } catch (Exception ignored) {
+            }
+        }
+
+        int arrayStart = text.indexOf('[');
+        int arrayEnd = text.lastIndexOf(']');
+        if (arrayStart >= 0 && arrayEnd > arrayStart) {
+            try {
+                return JSON.parse(text.substring(arrayStart, arrayEnd + 1));
+            } catch (Exception ignored) {
+            }
+        }
+
+        JSONObject fallback = extractSubjectBodyFallback(text);
+        return fallback.isEmpty() ? null : fallback;
+    }
+
+    private JSONObject extractSubjectBodyFallback(String text) {
+        JSONObject fallback = new JSONObject();
+        Matcher matcher = JSON_STRING_FIELD_PATTERN.matcher(text);
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            String rawValue = matcher.group(2);
+            String decoded = decodeJsonString(rawValue);
+            if (StringUtils.hasText(decoded)) {
+                fallback.put(key.toLowerCase(), decoded);
+            }
+        }
+        return fallback;
+    }
+
+    private String decodeJsonString(String rawValue) {
+        if (rawValue == null) {
+            return "";
+        }
+        try {
+            return JSON.parse("\"" + rawValue + "\"").toString();
+        } catch (Exception ignored) {
+            return rawValue
+                    .replace("\\n", "\n")
+                    .replace("\\r", "\r")
+                    .replace("\\t", "\t")
+                    .replace("\\\"", "\"")
+                    .replace("\\\\", "\\");
+        }
     }
 
     private NodeExecutionResult executeConditionNode(JSONObject context, GraphNode node) {
@@ -642,12 +914,60 @@ public class WorkflowRunExecutor {
         return output;
     }
 
+    private JSONArray normalizeExtractionRules(Object raw) {
+        JSONArray source = parseJsonArray(raw);
+        JSONArray normalized = new JSONArray();
+        for (int i = 0; i < source.size(); i++) {
+            JSONObject item = source.getJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+
+            String field = firstNonBlank(item.getString("field"), item.getString("fieldName"));
+            String selector = item.getString("selector");
+            if (!StringUtils.hasText(selector)) {
+                continue;
+            }
+
+            JSONObject rule = new JSONObject();
+            rule.put("field", StringUtils.hasText(field) ? field : "value_" + (i + 1));
+            rule.put("selector", selector);
+
+            String type = item.getString("type");
+            String attr = item.getString("attr");
+            String attribute = item.getString("attribute");
+            if (!StringUtils.hasText(type) && StringUtils.hasText(attribute)) {
+                if ("text".equalsIgnoreCase(attribute) || "html".equalsIgnoreCase(attribute)) {
+                    type = attribute.toLowerCase();
+                } else {
+                    type = "attr";
+                    attr = attribute;
+                }
+            }
+
+            rule.put("type", StringUtils.hasText(type) ? type : "text");
+            if (StringUtils.hasText(attr)) {
+                rule.put("attr", attr);
+            }
+            normalized.add(rule);
+        }
+        return normalized;
+    }
+
     private JSONObject createInitialContext(String rawInputConfig) {
         JSONObject context = new JSONObject();
         context.put("input", parseJsonObject(rawInputConfig));
+        context.put("env", buildEnvironmentContext());
         context.put("nodes", new JSONObject());
         context.put("notifications", new JSONArray());
         return context;
+    }
+
+    private JSONObject buildEnvironmentContext() {
+        JSONObject env = new JSONObject();
+        env.put("RESEND_API_KEY", resendApiKey);
+        env.put("RESEND_FROM_EMAIL", resendFromEmail);
+        return env;
     }
 
     private String buildNodeInputSnapshot(JSONObject context, GraphNode node, List<EdgeRuntimeState> incoming) {
@@ -732,10 +1052,64 @@ public class WorkflowRunExecutor {
         return JSON.toJSONString(result);
     }
 
+    private BoundRobot resolveBoundRobot(RobotBindings bindings, GraphNode node) {
+        if (bindings == null || node == null) {
+            return null;
+        }
+
+        String role = switch (node.type) {
+            case "web_crawl" -> "crawl";
+            case "ai_filter" -> "analysis";
+            case "http_request" -> "notification";
+            default -> null;
+        };
+        if (!StringUtils.hasText(role)) {
+            return null;
+        }
+
+        Long robotId = bindings.robotIdForRole(role);
+        if (robotId == null) {
+            return null;
+        }
+
+        Robot robot = robotRepository.findById(robotId)
+                .orElseThrow(() -> new RuntimeException("Bound " + role + " robot not found: " + robotId));
+        String expectedType = expectedRobotType(role);
+        if (StringUtils.hasText(expectedType) && !expectedType.equals(robot.getType())) {
+            throw new RuntimeException("Bound " + role + " robot type mismatch: expected " + expectedType + ", actual " + robot.getType());
+        }
+        if (!Set.of("online", "running").contains(robot.getStatus())) {
+            throw new RuntimeException("Bound " + role + " robot is offline: " + robot.getName());
+        }
+        return new BoundRobot(robot.getId(), robot.getName(), robot.getType(), role);
+    }
+
+    private String expectedRobotType(String role) {
+        return switch (role) {
+            case "crawl" -> "data_collector";
+            case "analysis" -> "report_generator";
+            case "notification" -> "notification";
+            default -> "";
+        };
+    }
+
+    private String formatRobotLogSuffix(BoundRobot robot) {
+        if (robot == null || !StringUtils.hasText(robot.name())) {
+            return "";
+        }
+        return " via robot: " + robot.name() + " (" + robot.type() + ")";
+    }
+
     private GraphModel parseGraph(String rawGraph) {
         try {
             JsonNode root = objectMapper.readTree(rawGraph);
             GraphModel model = new GraphModel();
+            JsonNode rawRobotBindings = root.path("robotBindings");
+            model.robotBindings = new RobotBindings(
+                    asLong(rawRobotBindings.path("crawlRobotId")),
+                    asLong(rawRobotBindings.path("analysisRobotId")),
+                    asLong(rawRobotBindings.path("notificationRobotId"))
+            );
             for (JsonNode node : root.path("nodes")) {
                 GraphNode graphNode = new GraphNode(
                         node.path("id").asText(),
@@ -762,6 +1136,23 @@ public class WorkflowRunExecutor {
         } catch (Exception ex) {
             throw new RuntimeException("Invalid graph snapshot", ex);
         }
+    }
+
+    private Long asLong(JsonNode value) {
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (value.isNumber()) {
+            return value.asLong();
+        }
+        if (value.isTextual() && StringUtils.hasText(value.asText())) {
+            try {
+                return Long.parseLong(value.asText());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private JSONObject parseJsonObject(Object raw) {
@@ -824,6 +1215,43 @@ public class WorkflowRunExecutor {
         return buffer.toString();
     }
 
+    private String renderJsonTemplate(String template, JSONObject context) {
+        if (!StringUtils.hasText(template)) {
+            return template;
+        }
+
+        Matcher quotedMatcher = QUOTED_TEMPLATE_PATTERN.matcher(template);
+        StringBuffer quotedBuffer = new StringBuffer();
+        while (quotedMatcher.find()) {
+            Object value = readPathValue(context, quotedMatcher.group(1));
+            quotedMatcher.appendReplacement(
+                    quotedBuffer,
+                    Matcher.quoteReplacement(value == null ? "null" : JSON.toJSONString(value))
+            );
+        }
+        quotedMatcher.appendTail(quotedBuffer);
+
+        Matcher matcher = TEMPLATE_PATTERN.matcher(quotedBuffer.toString());
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            Object value = readPathValue(context, matcher.group(1));
+            matcher.appendReplacement(
+                    buffer,
+                    Matcher.quoteReplacement(value == null ? "null" : JSON.toJSONString(value))
+            );
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    private boolean isJsonRequest(HttpHeaders headers, String bodyTemplate) {
+        MediaType contentType = headers.getContentType();
+        String trimmed = bodyTemplate == null ? "" : bodyTemplate.trim();
+        return contentType != null
+                && MediaType.APPLICATION_JSON.isCompatibleWith(contentType)
+                && (trimmed.startsWith("{") || trimmed.startsWith("["));
+    }
+
     private Object readPathValue(Object source, String path) {
         if (source == null || !StringUtils.hasText(path)) {
             return null;
@@ -831,7 +1259,11 @@ public class WorkflowRunExecutor {
         Object current = source instanceof JSONObject ? source : JSON.toJSON(source);
         for (String segment : path.split("\\.")) {
             if (current instanceof JSONObject jsonObject) {
-                current = jsonObject.get(segment);
+                Object direct = jsonObject.get(segment);
+                if (direct == null) {
+                    direct = readLegacyCompatibleValue(jsonObject, segment);
+                }
+                current = direct;
             } else if (current instanceof Map<?, ?> map) {
                 current = map.get(segment);
             } else if (current instanceof List<?> list) {
@@ -849,6 +1281,48 @@ public class WorkflowRunExecutor {
             }
         }
         return current;
+    }
+
+    private Object readLegacyCompatibleValue(JSONObject jsonObject, String segment) {
+        if (!StringUtils.hasText(segment)) {
+            return null;
+        }
+        if ("subject".equals(segment) || "title".equals(segment) || "body".equals(segment) || "content".equals(segment)) {
+            JSONObject structured = jsonObject.getJSONObject("structured");
+            if (structured != null) {
+                if ("subject".equals(segment) || "title".equals(segment)) {
+                    return structured.get("subject");
+                }
+                return structured.get("body");
+            }
+            if ("content".equals(segment)) {
+                return firstNonBlank(jsonObject.getString("summaryText"), jsonObject.getString("title"));
+            }
+        }
+        return null;
+    }
+
+    private boolean looksLikePlaceholderMailServiceUrl(String url) {
+        return StringUtils.hasText(url) && url.contains("api.mail-service.com/send");
+    }
+
+    private boolean looksLikeTemplateValue(String value) {
+        return StringUtils.hasText(value) && (value.contains("{{") || value.startsWith("$."));
+    }
+
+    private String extractStringValue(JSONObject jsonObject, String key) {
+        if (jsonObject == null || !StringUtils.hasText(key)) {
+            return null;
+        }
+        Object value = jsonObject.get(key);
+        if (value instanceof JSONArray jsonArray) {
+            if (jsonArray.isEmpty()) {
+                return null;
+            }
+            Object first = jsonArray.get(0);
+            return first == null ? null : String.valueOf(first);
+        }
+        return value == null ? null : String.valueOf(value);
     }
 
     private double toDouble(Object value) {
@@ -873,6 +1347,18 @@ public class WorkflowRunExecutor {
         return StringUtils.hasText(first) ? first : second;
     }
 
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     private void sleep(long millis) {
         try {
             Thread.sleep(millis);
@@ -887,7 +1373,7 @@ public class WorkflowRunExecutor {
 
         String graphSnapshot();
 
-        WorkflowStepRun createStepRun(GraphNode node, String branchKey, String inputSnapshot);
+        WorkflowStepRun createStepRun(GraphNode node, String branchKey, String inputSnapshot, BoundRobot robot);
 
         void updateProgress(int progress);
 
@@ -925,6 +1411,21 @@ public class WorkflowRunExecutor {
         private final List<EdgeDef> edges = new ArrayList<>();
         private final Map<String, List<EdgeDef>> outgoingEdges = new HashMap<>();
         private final Map<String, List<EdgeDef>> incomingEdges = new HashMap<>();
+        private RobotBindings robotBindings = new RobotBindings(null, null, null);
+    }
+
+    private record RobotBindings(Long crawlRobotId, Long analysisRobotId, Long notificationRobotId) {
+        private Long robotIdForRole(String role) {
+            return switch (role) {
+                case "crawl" -> crawlRobotId;
+                case "analysis" -> analysisRobotId;
+                case "notification" -> notificationRobotId;
+                default -> null;
+            };
+        }
+    }
+
+    private record BoundRobot(Long id, String name, String type, String role) {
     }
 
     private record NodeExecutionResult(JSONObject output, Set<String> chosenHandles) {

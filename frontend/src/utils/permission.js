@@ -1,11 +1,3 @@
-/**
- * 基础角色/权限辅助方法
- *
- * 说明：
- * 1. 页面与按钮的最终显示应优先依据后端返回的 permission code。
- * 2. 这里保留角色级工具方法，主要用于管理员兜底判断与展示。
- */
-
 export const ROLES = {
   ADMIN: 'ADMIN',
   USER: 'USER',
@@ -13,7 +5,7 @@ export const ROLES = {
 }
 
 export const ROLE_DISPLAY_NAMES = {
-  ADMIN: '管理员',
+  ADMIN: '系统管理员',
   USER: '普通用户',
   GUEST: '访客'
 }
@@ -22,7 +14,6 @@ export const MENU_PERMISSIONS = {
   '/system': [ROLES.ADMIN],
   '/system/user': [ROLES.ADMIN],
   '/system/role': [ROLES.ADMIN],
-  '/task/create': [ROLES.ADMIN],
   '/workflow/design': [ROLES.ADMIN],
   '/settings': [ROLES.ADMIN],
   '/settings/basic': [ROLES.ADMIN],

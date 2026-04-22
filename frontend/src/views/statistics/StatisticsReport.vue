@@ -110,8 +110,8 @@ const chartInstances = ref([])
 
 const taskTypeMap = {
   'data-collection': '数据采集',
-  ai_workflow: 'AI分析',
-  workflow: 'AI分析',
+  ai_workflow: '历史 AI 工作流',
+  workflow: '流程任务',
   report: '报表生成',
   'data-sync': '数据同步',
   'web-crawl': '网站抓取'

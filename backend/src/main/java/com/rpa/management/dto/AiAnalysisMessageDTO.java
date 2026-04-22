@@ -13,6 +13,8 @@ public class AiAnalysisMessageDTO {
 
     private Long analysisTaskId;
 
+    private Long taskRunId;
+
     private String role;
 
     private String content;

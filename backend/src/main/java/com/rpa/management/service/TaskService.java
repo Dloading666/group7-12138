@@ -22,6 +22,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
@@ -51,9 +53,6 @@ public class TaskService {
         if (dto.getWorkflowVersionId() != null) {
             Task task = createWorkflowTaskEntity(dto, userId, userName);
             task = taskRepository.save(task);
-            if ("immediate".equalsIgnoreCase(task.getExecuteType())) {
-                return startTask(task.getId());
-            }
             return toDTO(task);
         }
 
@@ -406,7 +405,17 @@ public class TaskService {
         }
 
         taskRepository.save(task);
-        robotExecutor.executeTaskRunAsync(run.getId());
+        Runnable launch = () -> robotExecutor.executeTaskRunAsync(run.getId());
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    launch.run();
+                }
+            });
+        } else {
+            launch.run();
+        }
     }
 
     private String resolveWorkflowSnapshot(Task task) {

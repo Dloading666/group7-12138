@@ -11,5 +11,9 @@ public interface AiAnalysisMessageRepository extends JpaRepository<AiAnalysisMes
 
     List<AiAnalysisMessage> findByAnalysisTaskIdOrderByCreateTimeAsc(Long analysisTaskId);
 
+    List<AiAnalysisMessage> findByTaskRunIdOrderByCreateTimeAsc(Long taskRunId);
+
     long countByAnalysisTaskId(Long analysisTaskId);
+
+    long countByTaskRunId(Long taskRunId);
 }

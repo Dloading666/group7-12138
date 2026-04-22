@@ -21,15 +21,31 @@ public class WorkflowStepRunService {
     private final WorkflowStepRunRepository workflowStepRunRepository;
 
     @Transactional
-    public WorkflowStepRun createTaskStepRun(Long taskRunId, String nodeId, String nodeType, String nodeLabel, String branchKey, String inputSnapshot) {
-        WorkflowStepRun stepRun = createBaseStepRun(nodeId, nodeType, nodeLabel, branchKey, inputSnapshot);
+    public WorkflowStepRun createTaskStepRun(Long taskRunId,
+                                             String nodeId,
+                                             String nodeType,
+                                             String nodeLabel,
+                                             String branchKey,
+                                             String inputSnapshot,
+                                             Long robotId,
+                                             String robotName,
+                                             String robotType) {
+        WorkflowStepRun stepRun = createBaseStepRun(nodeId, nodeType, nodeLabel, branchKey, inputSnapshot, robotId, robotName, robotType);
         stepRun.setTaskRunId(taskRunId);
         return workflowStepRunRepository.save(stepRun);
     }
 
     @Transactional
-    public WorkflowStepRun createDebugStepRun(Long debugRunId, String nodeId, String nodeType, String nodeLabel, String branchKey, String inputSnapshot) {
-        WorkflowStepRun stepRun = createBaseStepRun(nodeId, nodeType, nodeLabel, branchKey, inputSnapshot);
+    public WorkflowStepRun createDebugStepRun(Long debugRunId,
+                                              String nodeId,
+                                              String nodeType,
+                                              String nodeLabel,
+                                              String branchKey,
+                                              String inputSnapshot,
+                                              Long robotId,
+                                              String robotName,
+                                              String robotType) {
+        WorkflowStepRun stepRun = createBaseStepRun(nodeId, nodeType, nodeLabel, branchKey, inputSnapshot, robotId, robotName, robotType);
         stepRun.setDebugRunId(debugRunId);
         return workflowStepRunRepository.save(stepRun);
     }
@@ -114,6 +130,9 @@ public class WorkflowStepRunService {
                 .nodeLabel(stepRun.getNodeLabel())
                 .branchKey(stepRun.getBranchKey())
                 .engineTaskId(stepRun.getEngineTaskId())
+                .robotId(stepRun.getRobotId())
+                .robotName(stepRun.getRobotName())
+                .robotType(stepRun.getRobotType())
                 .status(stepRun.getStatus())
                 .inputSnapshot(stepRun.getInputSnapshot())
                 .outputSnapshot(stepRun.getOutputSnapshot())
@@ -126,7 +145,14 @@ public class WorkflowStepRunService {
                 .build();
     }
 
-    private WorkflowStepRun createBaseStepRun(String nodeId, String nodeType, String nodeLabel, String branchKey, String inputSnapshot) {
+    private WorkflowStepRun createBaseStepRun(String nodeId,
+                                              String nodeType,
+                                              String nodeLabel,
+                                              String branchKey,
+                                              String inputSnapshot,
+                                              Long robotId,
+                                              String robotName,
+                                              String robotType) {
         WorkflowStepRun stepRun = new WorkflowStepRun();
         stepRun.setStepRunId(generateStepRunId());
         stepRun.setNodeId(nodeId);
@@ -134,6 +160,9 @@ public class WorkflowStepRunService {
         stepRun.setNodeLabel(nodeLabel);
         stepRun.setBranchKey(branchKey);
         stepRun.setInputSnapshot(inputSnapshot);
+        stepRun.setRobotId(robotId);
+        stepRun.setRobotName(robotName);
+        stepRun.setRobotType(robotType);
         return stepRun;
     }
 

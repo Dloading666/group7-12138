@@ -145,6 +145,9 @@ public class DatabaseSchemaMigrator implements CommandLineRunner {
                     node_label VARCHAR(200),
                     branch_key VARCHAR(100),
                     engine_task_id VARCHAR(100),
+                    robot_id BIGINT,
+                    robot_name VARCHAR(100),
+                    robot_type VARCHAR(50),
                     status VARCHAR(20) DEFAULT 'pending',
                     input_snapshot LONGTEXT,
                     output_snapshot LONGTEXT,
@@ -159,6 +162,9 @@ public class DatabaseSchemaMigrator implements CommandLineRunner {
                     INDEX idx_workflow_step_run_status (status)
                 )
                 """);
+        addColumnIfMissing("sys_workflow_step_run", "robot_id", "BIGINT");
+        addColumnIfMissing("sys_workflow_step_run", "robot_name", "VARCHAR(100)");
+        addColumnIfMissing("sys_workflow_step_run", "robot_type", "VARCHAR(50)");
 
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS sys_ai_analysis_message (
@@ -172,6 +178,10 @@ public class DatabaseSchemaMigrator implements CommandLineRunner {
                     INDEX idx_ai_analysis_task_run_id (task_run_id),
                     INDEX idx_ai_analysis_create_time (create_time)
                 )
+                """);
+        jdbcTemplate.execute("""
+                ALTER TABLE sys_ai_analysis_message
+                    MODIFY COLUMN analysis_task_id BIGINT NULL
                 """);
         addColumnIfMissing("sys_execution_log", "task_run_id", "BIGINT");
 

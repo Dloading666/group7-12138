@@ -3,13 +3,9 @@ package com.rpa.management.controller;
 import com.rpa.management.dto.AiAnalysisMessageDTO;
 import com.rpa.management.dto.AiAnalysisQuestionRequest;
 import com.rpa.management.dto.ApiResponse;
-import com.rpa.management.dto.CreateAiAnalysisTaskRequest;
-import com.rpa.management.dto.TaskDTO;
 import com.rpa.management.service.AiAnalysisService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,27 +21,19 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/ai-analysis")
-@Tag(name = "AI 分析", description = "AI 分析任务与问答接口")
+@Tag(name = "历史 AI 分析", description = "兼容历史 ai_workflow 数据的只读接口")
 public class AiAnalysisController {
 
     private final AiAnalysisService aiAnalysisService;
 
     @PostMapping("/tasks")
-    @Operation(summary = "创建 AI 分析任务")
-    public ApiResponse<TaskDTO> createTask(@Valid @RequestBody CreateAiAnalysisTaskRequest request,
-                                           HttpServletRequest httpRequest) {
-        try {
-            Long userId = (Long) httpRequest.getAttribute("userId");
-            String userName = (String) httpRequest.getAttribute("username");
-            return ApiResponse.success("AI 分析任务创建成功", aiAnalysisService.createAnalysisTask(request, userId, userName));
-        } catch (Exception ex) {
-            log.error("Failed to create AI analysis task", ex);
-            return ApiResponse.error(400, ex.getMessage());
-        }
+    @Operation(summary = "已废弃：不再创建独立 AI 分析任务")
+    public ApiResponse<Void> createTask() {
+        return ApiResponse.error(410, "独立 AI 分析任务已下线，请改为在已完成任务运行详情中使用内置分析。");
     }
 
     @GetMapping("/tasks/{id}/messages")
-    @Operation(summary = "获取 AI 分析问答记录")
+    @Operation(summary = "读取历史 AI 分析问答记录")
     public ApiResponse<List<AiAnalysisMessageDTO>> getMessages(@PathVariable Long id) {
         try {
             return ApiResponse.success(aiAnalysisService.getMessages(id));
@@ -56,14 +44,10 @@ public class AiAnalysisController {
     }
 
     @PostMapping("/tasks/{id}/messages")
-    @Operation(summary = "发送 AI 追问")
-    public ApiResponse<List<AiAnalysisMessageDTO>> askQuestion(@PathVariable Long id,
-                                                               @Valid @RequestBody AiAnalysisQuestionRequest request) {
-        try {
-            return ApiResponse.success("问答成功", aiAnalysisService.askQuestion(id, request.getQuestion()));
-        } catch (Exception ex) {
-            log.error("Failed to ask AI question for {}", id, ex);
-            return ApiResponse.error(400, ex.getMessage());
-        }
+    @Operation(summary = "已废弃：历史 AI 分析记录只读")
+    public ApiResponse<Void> askQuestion(@PathVariable Long id,
+                                         @RequestBody(required = false) AiAnalysisQuestionRequest request) {
+        log.info("Rejected deprecated ai-analysis follow-up for legacy task {}", id);
+        return ApiResponse.error(410, "历史 AI 分析记录已切换为只读，请在任务运行详情中发起新的分析对话。");
     }
 }

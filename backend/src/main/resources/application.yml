@@ -48,6 +48,14 @@ external:
     callback-url: ${BACKEND_CALLBACK_BASE:http://localhost:8080}/api/agent/callback
 
 # 日志配置
+app:
+  timezone: ${APP_TIMEZONE:Asia/Shanghai}
+
+mail:
+  resend:
+    api-key: ${RESEND_API_KEY:}
+    from-email: ${RESEND_FROM_EMAIL:}
+
 logging:
   level:
     com.rpa.management: INFO

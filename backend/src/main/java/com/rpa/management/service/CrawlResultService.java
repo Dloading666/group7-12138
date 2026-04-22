@@ -138,21 +138,21 @@ public class CrawlResultService {
     }
 
     public CrawlResultDTO getResultByTaskId(String taskId) {
-        CrawlResult crawlResult = crawlResultRepository.findByTaskId(taskId)
-                .orElseThrow(() -> new RuntimeException("未找到抓取结果: " + taskId));
-        return toDto(crawlResult);
+        return crawlResultRepository.findByTaskId(taskId)
+                .map(this::toDto)
+                .orElse(null);
     }
 
     public CrawlResultDTO getResultByTaskRecordId(Long taskRecordId) {
-        CrawlResult crawlResult = crawlResultRepository.findByTaskRecordId(taskRecordId)
-                .orElseThrow(() -> new RuntimeException("未找到抓取结果: " + taskRecordId));
-        return toDto(crawlResult);
+        return crawlResultRepository.findByTaskRecordId(taskRecordId)
+                .map(this::toDto)
+                .orElse(null);
     }
 
     public CrawlResultDTO getResultByTaskRunId(Long taskRunId) {
-        CrawlResult crawlResult = crawlResultRepository.findByTaskRunId(taskRunId)
-                .orElseThrow(() -> new RuntimeException("未找到抓取结果: " + taskRunId));
-        return toDto(crawlResult);
+        return crawlResultRepository.findByTaskRunId(taskRunId)
+                .map(this::toDto)
+                .orElse(null);
     }
 
     @Transactional

@@ -104,16 +104,23 @@ CREATE TABLE sys_task (
     status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态：pending-等待，running-执行中，completed-完成，failed-失败',
     progress INT DEFAULT 0 COMMENT '进度(0-100)',
     robot_id BIGINT COMMENT '执行机器人ID',
-    params TEXT COMMENT '任务参数(JSON)',
-    result TEXT COMMENT '执行结果',
+    robot_name VARCHAR(50) COMMENT '执行机器人名称',
+    params LONGTEXT COMMENT '任务参数(JSON)',
+    description LONGTEXT COMMENT '任务描述',
+    result LONGTEXT COMMENT '执行结果',
+    error_message LONGTEXT COMMENT '错误信息',
     priority VARCHAR(20) DEFAULT 'medium' COMMENT '优先级：high-高，medium-中，low-低',
     execute_type VARCHAR(20) DEFAULT 'immediate' COMMENT '执行方式：immediate-立即，scheduled-定时',
-    schedule_time DATETIME COMMENT '定时执行时间',
+    scheduled_time DATETIME COMMENT '定时执行时间',
     user_id BIGINT COMMENT '创建用户ID',
+    user_name VARCHAR(50) COMMENT '创建用户名',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     start_time DATETIME COMMENT '开始时间',
     end_time DATETIME COMMENT '结束时间',
     duration INT COMMENT '耗时(秒)',
+    tax_id VARCHAR(50) COMMENT '税号',
+    enterprise_name VARCHAR(200) COMMENT '企业名称',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     
     INDEX idx_task_id (task_id),
     INDEX idx_status (status),
@@ -121,7 +128,34 @@ CREATE TABLE sys_task (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='任务表';
 
 -- =============================================
--- 6. 机器人表
+-- 6. 抓取结果表
+-- =============================================
+DROP TABLE IF EXISTS sys_crawl_result;
+
+CREATE TABLE sys_crawl_result (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '抓取结果ID',
+    task_record_id BIGINT COMMENT '任务主表ID',
+    task_id VARCHAR(50) NOT NULL UNIQUE COMMENT '任务编号',
+    task_name VARCHAR(100) COMMENT '任务名称',
+    final_url VARCHAR(1000) COMMENT '最终URL',
+    title VARCHAR(500) COMMENT '页面标题',
+    summary_text LONGTEXT COMMENT '正文摘要',
+    raw_html LONGTEXT COMMENT '原始HTML',
+    structured_data LONGTEXT COMMENT '结构化结果',
+    total_count INT DEFAULT 0 COMMENT '结果条数',
+    crawled_pages INT DEFAULT 0 COMMENT '抓取页数',
+    status VARCHAR(20) DEFAULT 'pending' COMMENT '状态',
+    error_message LONGTEXT COMMENT '错误信息',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+    INDEX idx_crawl_result_task_record_id (task_record_id),
+    INDEX idx_crawl_result_status (status),
+    INDEX idx_crawl_result_create_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='真实网站抓取结果表';
+
+-- =============================================
+-- 7. 机器人表
 -- =============================================
 DROP TABLE IF EXISTS sys_robot;
 
@@ -144,25 +178,46 @@ CREATE TABLE sys_robot (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='机器人表';
 
 -- =============================================
--- 7. 执行日志表
+-- 8. 执行日志表
 -- =============================================
+-- =============================================
+-- 7.1 AI 分析问答消息表
+-- =============================================
+DROP TABLE IF EXISTS sys_ai_analysis_message;
+
+CREATE TABLE sys_ai_analysis_message (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '消息ID',
+    analysis_task_id BIGINT NOT NULL COMMENT 'AI分析任务ID',
+    role VARCHAR(20) NOT NULL COMMENT '角色:user/assistant',
+    content LONGTEXT NOT NULL COMMENT '消息内容',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+
+    INDEX idx_ai_analysis_task_id (analysis_task_id),
+    INDEX idx_ai_analysis_create_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI分析问答消息表';
+
 DROP TABLE IF EXISTS sys_execution_log;
 
 CREATE TABLE sys_execution_log (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '日志ID',
     task_id BIGINT COMMENT '任务ID',
-    level VARCHAR(20) NOT NULL COMMENT '日志级别：INFO, WARN, ERROR',
-    message TEXT COMMENT '日志内容',
+    task_code VARCHAR(50) COMMENT '任务编号',
+    task_name VARCHAR(100) COMMENT '任务名称',
     robot_id BIGINT COMMENT '机器人ID',
+    robot_name VARCHAR(50) COMMENT '机器人名称',
+    level VARCHAR(20) NOT NULL DEFAULT 'INFO' COMMENT '日志级别：INFO, WARN, ERROR',
+    message TEXT NOT NULL COMMENT '日志内容',
+    stage VARCHAR(50) COMMENT '执行阶段: start, process, end, error',
+    extra_data LONGTEXT COMMENT '额外数据（JSON格式）',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    
+
     INDEX idx_task_id (task_id),
     INDEX idx_level (level),
     INDEX idx_create_time (create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='执行日志表';
 
 -- =============================================
--- 8. 操作日志表
+-- 9. 操作日志表
 -- =============================================
 DROP TABLE IF EXISTS sys_operation_log;
 

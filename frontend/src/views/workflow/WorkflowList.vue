@@ -3,25 +3,40 @@
     <div class="page-header-bar">
       <div class="page-title-block">
         <h2>流程列表</h2>
-        <p>流程先保存为草稿，再发布成不可变版本。任务创建只面向已发布版本，不再保留写死的数据采集入口。</p>
+        <p>草稿会统一保存在草稿箱，支持继续编辑、查看和删除。发布后的流程会保留在正式列表中。</p>
       </div>
       <div class="page-header-actions">
-        <el-button @click="handleAiCreate">AI 生成流程</el-button>
+        <el-button plain @click="openDraftBox">打开草稿箱</el-button>
         <el-button type="primary" @click="handleCreate">手工新建流程</el-button>
       </div>
+    </div>
+
+    <div class="page-section page-view-switch">
+      <div class="view-copy">
+        <h3>{{ currentView.label }}</h3>
+        <p>{{ currentView.description }}</p>
+      </div>
+      <el-radio-group v-model="activeView" size="large" @change="handleViewChange">
+        <el-radio-button
+          v-for="item in viewOptions"
+          :key="item.value"
+          :label="item.value"
+        >
+          {{ item.label }}
+        </el-radio-button>
+      </el-radio-group>
     </div>
 
     <div class="page-section page-filter-bar">
       <el-form :model="searchForm" inline class="search-form">
         <el-form-item label="流程名称">
-          <el-input v-model="searchForm.name" placeholder="请输入流程名称" clearable style="width: 220px" />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="searchForm.status" placeholder="全部状态" clearable style="width: 160px">
-            <el-option label="草稿" value="draft" />
-            <el-option label="已发布" value="published" />
-            <el-option label="已归档" value="archived" />
-          </el-select>
+          <el-input
+            v-model="searchForm.name"
+            clearable
+            placeholder="请输入流程名称"
+            style="width: 240px"
+            @keyup.enter="handleSearch"
+          />
         </el-form-item>
         <el-form-item>
           <div class="page-actions">
@@ -33,9 +48,15 @@
     </div>
 
     <div class="page-section page-table-card">
-      <el-table :data="tableData" v-loading="loading" border stripe>
+      <el-table
+        :data="tableData"
+        v-loading="loading"
+        border
+        stripe
+        :empty-text="emptyText"
+      >
         <el-table-column prop="workflowCode" label="流程编码" width="160" />
-        <el-table-column prop="name" label="流程名称" min-width="220" />
+        <el-table-column prop="name" label="流程名称" min-width="240" />
         <el-table-column prop="category" label="分类" width="140">
           <template #default="{ row }">
             {{ getCategoryText(row.category) }}
@@ -62,11 +83,13 @@
             {{ formatDateTime(row.createTime) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right" align="center">
+        <el-table-column label="操作" width="260" fixed="right" align="center">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button link type="primary" @click="handleView(row)">查看</el-button>
-              <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
+              <el-button link type="primary" @click="handleEdit(row)">
+                {{ getEditLabel(row) }}
+              </el-button>
               <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
@@ -90,16 +113,51 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { deleteWorkflow, getWorkflowList } from '../../api/workflow.js'
 
 const router = useRouter()
+const route = useRoute()
+
+const workflowViews = {
+  all: {
+    label: '全部流程',
+    status: '',
+    description: '查看全部流程，适合统一浏览当前系统里的草稿、已发布和已归档流程。'
+  },
+  drafts: {
+    label: '草稿箱',
+    status: 'draft',
+    description: '这里集中保存还没发布的流程草稿，适合继续编辑、调试或删除无效草稿。'
+  },
+  published: {
+    label: '已发布',
+    status: 'published',
+    description: '这里只显示已经发布的正式流程，可用于任务创建和后续版本管理。'
+  },
+  archived: {
+    label: '已归档',
+    status: 'archived',
+    description: '归档后的流程会保留在这里，方便回查，但不会再作为当前主流程使用。'
+  }
+}
+
+const viewOptions = Object.entries(workflowViews).map(([value, item]) => ({
+  value,
+  label: item.label
+}))
+
+function resolveViewKey(value) {
+  return workflowViews[value] ? value : 'all'
+}
+
+const activeView = ref(resolveViewKey(route.query.view))
+const currentView = computed(() => workflowViews[activeView.value] || workflowViews.all)
 
 const searchForm = ref({
-  name: '',
-  status: ''
+  name: ''
 })
 
 const tableData = ref([])
@@ -121,6 +179,32 @@ const categoryTextMap = {
   other: '其他'
 }
 
+const emptyText = computed(() => {
+  if (activeView.value === 'drafts') {
+    return '草稿箱里还没有流程草稿'
+  }
+  if (activeView.value === 'published') {
+    return '还没有已发布的流程'
+  }
+  if (activeView.value === 'archived') {
+    return '还没有已归档的流程'
+  }
+  return '暂无流程数据'
+})
+
+function syncViewQuery(viewKey) {
+  const nextQuery = { ...route.query }
+  if (viewKey === 'all') {
+    delete nextQuery.view
+  } else {
+    nextQuery.view = viewKey
+  }
+  router.replace({
+    path: route.path,
+    query: nextQuery
+  })
+}
+
 const loadWorkflowList = async () => {
   loading.value = true
   try {
@@ -128,7 +212,7 @@ const loadWorkflowList = async () => {
       page: pageNum.value,
       size: pageSize.value,
       name: searchForm.value.name || undefined,
-      status: searchForm.value.status || undefined
+      status: currentView.value.status || undefined
     })
     tableData.value = res.data?.content || []
     total.value = res.data?.totalElements || 0
@@ -144,19 +228,26 @@ const handleSearch = () => {
 
 const handleReset = () => {
   searchForm.value = {
-    name: '',
-    status: ''
+    name: ''
   }
   pageNum.value = 1
   loadWorkflowList()
 }
 
-const handleCreate = () => {
-  router.push({ path: '/workflow/design', query: { mode: 'create' } })
+const handleViewChange = (value) => {
+  const nextView = resolveViewKey(value)
+  activeView.value = nextView
+  pageNum.value = 1
+  syncViewQuery(nextView)
+  loadWorkflowList()
 }
 
-const handleAiCreate = () => {
-  router.push({ path: '/workflow/design', query: { mode: 'ai' } })
+const openDraftBox = () => {
+  handleViewChange('drafts')
+}
+
+const handleCreate = () => {
+  router.push({ path: '/workflow/design', query: { mode: 'create' } })
 }
 
 const handleView = (row) => {
@@ -167,19 +258,30 @@ const handleEdit = (row) => {
   router.push({ path: '/workflow/design', query: { id: row.id, mode: 'edit' } })
 }
 
+const getEditLabel = (row) => {
+  if (row.status === 'draft') {
+    return '继续编辑'
+  }
+  return '编辑'
+}
+
 const handleDelete = async (row) => {
   try {
-    await ElMessageBox.confirm(`确认删除流程“${row.name}”吗？`, '删除流程', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
+    await ElMessageBox.confirm(
+      `确认删除流程“${row.name}”吗？删除后将无法恢复。`,
+      '删除流程',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
     await deleteWorkflow(row.id)
     ElMessage.success('删除成功')
     loadWorkflowList()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除失败')
+      ElMessage.error(error?.message || '删除失败')
     }
   }
 }
@@ -219,6 +321,19 @@ const formatDateTime = (value) => {
   return String(value).replace('T', ' ').slice(0, 19)
 }
 
+watch(
+  () => route.query.view,
+  (value) => {
+    const nextView = resolveViewKey(value)
+    if (nextView === activeView.value) {
+      return
+    }
+    activeView.value = nextView
+    pageNum.value = 1
+    loadWorkflowList()
+  }
+)
+
 onMounted(() => {
   loadWorkflowList()
 })
@@ -229,6 +344,25 @@ onMounted(() => {
   padding: 4px;
 }
 
+.page-view-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.view-copy h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  color: #1f2937;
+}
+
+.view-copy p {
+  margin: 0;
+  color: #667085;
+  line-height: 1.6;
+}
+
 .search-form {
   display: flex;
   flex-wrap: wrap;
@@ -237,5 +371,23 @@ onMounted(() => {
 
 .search-form :deep(.el-form-item) {
   margin-bottom: 0;
+}
+
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (max-width: 960px) {
+  .page-view-switch {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .page-view-switch :deep(.el-radio-group) {
+    width: 100%;
+    flex-wrap: wrap;
+  }
 }
 </style>

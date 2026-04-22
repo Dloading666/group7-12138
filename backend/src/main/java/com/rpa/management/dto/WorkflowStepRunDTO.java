@@ -27,6 +27,12 @@ public class WorkflowStepRunDTO {
 
     private String engineTaskId;
 
+    private Long robotId;
+
+    private String robotName;
+
+    private String robotType;
+
     private String status;
 
     private String inputSnapshot;

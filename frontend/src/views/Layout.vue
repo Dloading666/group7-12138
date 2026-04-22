@@ -1,6 +1,6 @@
 <template>
   <el-container class="layout-container">
-    <el-aside :width="isCollapse ? '72px' : '224px'" class="sidebar">
+    <el-aside :width="isCollapse ? '72px' : '228px'" class="sidebar">
       <div class="logo">
         <el-icon :size="28"><Monitor /></el-icon>
         <span v-show="!isCollapse" class="logo-text">RPA 管理平台</span>
@@ -11,7 +11,7 @@
         :collapse="isCollapse"
         :router="true"
         background-color="transparent"
-        text-color="#fff"
+        text-color="#f8fbff"
         active-text-color="#7dd3fc"
         class="sidebar-menu"
       >
@@ -20,60 +20,59 @@
           <template #title>首页</template>
         </el-menu-item>
 
-        <el-sub-menu index="system" v-if="hasPermission('system:view')">
+        <el-sub-menu v-if="hasPermission('system:view')" index="system">
           <template #title>
             <el-icon><Setting /></el-icon>
             <span>系统管理</span>
           </template>
-          <el-menu-item index="/system/user" v-if="hasPermission('system:user:view')">用户管理</el-menu-item>
-          <el-menu-item index="/system/role" v-if="hasPermission('system:role:view')">角色管理</el-menu-item>
-          <el-menu-item index="/system/permission" v-if="hasPermission('system:permission:view')">权限管理</el-menu-item>
+          <el-menu-item v-if="hasPermission('system:user:view')" index="/system/user">用户管理</el-menu-item>
+          <el-menu-item v-if="hasPermission('system:role:view')" index="/system/role">角色管理</el-menu-item>
+          <el-menu-item v-if="hasPermission('system:permission:view')" index="/system/permission">权限管理</el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu index="task" v-if="hasPermission('task:view')">
+        <el-sub-menu v-if="hasPermission('task:view')" index="task">
           <template #title>
             <el-icon><List /></el-icon>
             <span>任务管理</span>
           </template>
-          <el-menu-item index="/task/list" v-if="hasPermission('task:list')">任务列表</el-menu-item>
-          <el-menu-item index="/task/ai" v-if="hasPermission('task:list')">AI 分析</el-menu-item>
-          <el-menu-item index="/task/history" v-if="hasPermission('task:history')">任务历史</el-menu-item>
+          <el-menu-item v-if="hasPermission('task:list')" index="/task/list">任务列表</el-menu-item>
+          <el-menu-item v-if="hasPermission('task:history')" index="/task/history">任务历史</el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu index="workflow" v-if="hasPermission('workflow:view')">
+        <el-sub-menu v-if="hasPermission('workflow:view')" index="workflow">
           <template #title>
             <el-icon><Share /></el-icon>
-            <span>流程定义与设计</span>
+            <span>流程中心</span>
           </template>
-          <el-menu-item index="/workflow/list" v-if="hasPermission('workflow:list')">流程列表</el-menu-item>
-          <el-menu-item index="/workflow/design" v-if="hasPermission('workflow:create')">流程设计</el-menu-item>
+          <el-menu-item v-if="hasPermission('workflow:list')" index="/workflow/list">流程列表</el-menu-item>
+          <el-menu-item v-if="hasPermission('workflow:create')" index="/workflow/design">流程设计</el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu index="robot" v-if="hasPermission('robot:view')">
+        <el-sub-menu v-if="hasPermission('robot:view')" index="robot">
           <template #title>
             <el-icon><Cpu /></el-icon>
             <span>机器人管理</span>
           </template>
-          <el-menu-item index="/robot/list" v-if="hasPermission('robot:list')">机器人列表</el-menu-item>
+          <el-menu-item v-if="hasPermission('robot:list')" index="/robot/list">机器人列表</el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu index="statistics" v-if="hasDataCenterAccess">
+        <el-sub-menu v-if="hasDataCenterAccess" index="statistics">
           <template #title>
             <el-icon><DataAnalysis /></el-icon>
             <span>数据中心</span>
           </template>
-          <el-menu-item index="/statistics/query" v-if="hasPermission('statistics:query')">采集结果</el-menu-item>
-          <el-menu-item index="/statistics/logs" v-if="hasPermission('monitor:logs')">执行日志</el-menu-item>
-          <el-menu-item index="/statistics/report" v-if="hasPermission('statistics:report')">统计报表</el-menu-item>
+          <el-menu-item v-if="hasPermission('statistics:query')" index="/statistics/query">采集结果</el-menu-item>
+          <el-menu-item v-if="hasPermission('monitor:logs')" index="/statistics/logs">执行日志</el-menu-item>
+          <el-menu-item v-if="hasPermission('statistics:report')" index="/statistics/report">统计报表</el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu index="settings" v-if="hasPermission('settings:view')">
+        <el-sub-menu v-if="hasPermission('settings:view')" index="settings">
           <template #title>
             <el-icon><Tools /></el-icon>
             <span>系统设置</span>
           </template>
-          <el-menu-item index="/settings/basic">基础设置</el-menu-item>
-          <el-menu-item index="/settings/notification">通知设置</el-menu-item>
+          <el-menu-item v-if="hasPermission('settings:basic:view')" index="/settings/basic">基础设置</el-menu-item>
+          <el-menu-item v-if="hasPermission('settings:notification:view')" index="/settings/notification">通知设置</el-menu-item>
         </el-sub-menu>
       </el-menu>
     </el-aside>
@@ -85,8 +84,9 @@
             <Expand v-if="isCollapse" />
             <Fold v-else />
           </el-icon>
+
           <el-breadcrumb separator="/">
-            <el-breadcrumb-item v-for="(item, index) in breadcrumbs" :key="index">
+            <el-breadcrumb-item v-for="item in breadcrumbs" :key="item.path">
               {{ item.title }}
             </el-breadcrumb-item>
           </el-breadcrumb>
@@ -142,7 +142,7 @@ const route = useRoute()
 const router = useRouter()
 const isCollapse = ref(false)
 
-const username = ref('用户')
+const username = ref('平台成员')
 const userRole = ref('USER')
 const roleDisplayName = ref('普通用户')
 const userAvatar = ref('https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png')
@@ -150,10 +150,17 @@ const userPermissions = ref([])
 
 const isAdmin = computed(() => checkIsAdmin(userRole.value))
 const activeMenu = computed(() => route.path)
-const breadcrumbs = computed(() => route.matched.filter((item) => item.meta.title).map((item) => ({ title: item.meta.title })))
+const breadcrumbs = computed(() => {
+  return route.matched
+    .filter((item) => item.meta?.title)
+    .map((item) => ({
+      path: item.path,
+      title: item.meta.title
+    }))
+})
 
 const hasPermission = (permissionCode) => {
-  if (isAdmin.value) {
+  if (!permissionCode || isAdmin.value) {
     return true
   }
   return userPermissions.value.includes(permissionCode)
@@ -174,15 +181,15 @@ const getRoleTagType = (role) => {
 
 provide('userRole', userRole)
 provide('isAdmin', isAdmin)
-provide('hasActionPermission', hasPermission)
 provide('hasPermission', hasPermission)
+provide('hasActionPermission', hasPermission)
 
 const loadUserInfo = () => {
   const userInfoStr = localStorage.getItem('userInfo')
   if (userInfoStr) {
     try {
       const userInfo = JSON.parse(userInfoStr)
-      username.value = userInfo.realName || userInfo.username || '用户'
+      username.value = userInfo.realName || userInfo.username || '平台成员'
       userRole.value = userInfo.role || 'USER'
       roleDisplayName.value = userInfo.roleDisplayName || getRoleDisplayName(userInfo.role || 'USER')
       userAvatar.value = userInfo.avatar || userAvatar.value
@@ -220,8 +227,8 @@ const handleChangePassword = () => {
 }
 
 const handleLogout = () => {
-  ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-    confirmButtonText: '确定',
+  ElMessageBox.confirm('确认退出当前登录状态吗？', '退出登录', {
+    confirmButtonText: '退出',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
@@ -231,7 +238,7 @@ const handleLogout = () => {
         localStorage.removeItem('token')
         localStorage.removeItem('userInfo')
         localStorage.removeItem('userPermissions')
-        ElMessage.success('退出登录成功')
+        ElMessage.success('已退出登录')
         router.push('/login')
       })
   }).catch(() => {})
@@ -279,26 +286,6 @@ const handleLogout = () => {
   overflow-y: auto;
   overflow-x: hidden;
   border-right: none;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(125, 211, 252, 0.35) rgba(255, 255, 255, 0.06);
-}
-
-.sidebar-menu::-webkit-scrollbar {
-  width: 8px;
-}
-
-.sidebar-menu::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 999px;
-}
-
-.sidebar-menu::-webkit-scrollbar-thumb {
-  background: rgba(125, 211, 252, 0.35);
-  border-radius: 999px;
-}
-
-.sidebar-menu::-webkit-scrollbar-thumb:hover {
-  background: rgba(125, 211, 252, 0.5);
 }
 
 .main-container {

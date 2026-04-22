@@ -664,7 +664,7 @@ public class GenericCrawlerService {
             body.put("title", response.getTitle());
             body.put("summaryText", response.getSummaryText());
             body.put("rawHtml", response.getRawHtml());
-            body.put("structuredData", response.getStructuredData());
+            body.put("structuredData", sanitizeForJson(response.getStructuredData()));
             body.put("totalCount", response.getTotalCount());
             body.put("crawledPages", response.getCrawledPages());
 
@@ -676,6 +676,29 @@ public class GenericCrawlerService {
         } catch (Exception ex) {
             log.warn("Callback failed for taskId={}", response.getTaskId(), ex);
         }
+    }
+
+    private Object sanitizeForJson(Object value) {
+        if (value instanceof Map<?, ?> mapValue) {
+            Map<String, Object> sanitized = new LinkedHashMap<>();
+            int unnamedIndex = 1;
+            for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
+                String key = entry.getKey() == null ? "" : String.valueOf(entry.getKey()).trim();
+                if (!hasText(key)) {
+                    key = "value_" + unnamedIndex++;
+                }
+                sanitized.put(key, sanitizeForJson(entry.getValue()));
+            }
+            return sanitized;
+        }
+        if (value instanceof List<?> listValue) {
+            List<Object> sanitized = new ArrayList<>(listValue.size());
+            for (Object item : listValue) {
+                sanitized.add(sanitizeForJson(item));
+            }
+            return sanitized;
+        }
+        return value;
     }
 
     private record ExtractionRun(List<Map<String, Object>> data, int pages) {

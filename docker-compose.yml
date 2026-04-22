@@ -6,7 +6,7 @@ services:
     container_name: rpa-mysql
     restart: unless-stopped
     environment:
-      TZ: Asia/Shanghai
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
       MYSQL_DATABASE: management_system
     volumes:
@@ -24,19 +24,23 @@ services:
           - mysql
 
   agent:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
     image: project-gl-agent:latest
     container_name: rpa-agent
     restart: unless-stopped
     environment:
-      TZ: Asia/Shanghai
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
-      OPENAI_MODEL: ${OPENAI_MODEL:-contract-gemma4:latest}
-      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-180}
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      LLM_PROTOCOL: ${LLM_PROTOCOL:-openai}
+      LLM_API_KEY: ${LLM_API_KEY:-your-api-key-here}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.minimaxi.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-MiniMax-M2.7}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-180}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "5000:5000"
+      - "${AGENT_PORT:-5000}:5000"
     volumes:
       - agent_data:/app/storage
     healthcheck:
@@ -55,18 +59,23 @@ services:
           - agent
 
   spider:
+    build:
+      context: ./spider/spider_exc
+      dockerfile: Dockerfile
+      args:
+        PLAYWRIGHT_BASE_IMAGE: ${SPIDER_PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright/java:v1.40.0-jammy}
     image: project-gl-spider:latest
     container_name: rpa-spider
     restart: unless-stopped
     environment:
-      TZ: Asia/Shanghai
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: spider_db
       DB_USERNAME: root
       DB_PASSWORD: ${DB_PASSWORD:-123456}
     ports:
-      - "9081:8081"
+      - "${SPIDER_PORT:-9081}:8081"
     depends_on:
       mysql:
         condition: service_healthy
@@ -76,22 +85,28 @@ services:
           - spider
 
   backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     image: project-gl-backend:latest
     container_name: rpa-backend
     restart: unless-stopped
     environment:
-      TZ: Asia/Shanghai
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: management_system
       DB_USERNAME: root
       DB_PASSWORD: ${DB_PASSWORD:-123456}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
       JWT_SECRET: ${JWT_SECRET:-change-this-to-a-random-256-bit-secret-key-in-production}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
       SPIDER_BASE_URL: http://spider:8081
       AGENT_BASE_URL: http://agent:5000
       BACKEND_CALLBACK_BASE: http://backend:8080
     ports:
-      - "9080:8080"
+      - "${BACKEND_PORT:-9080}:8080"
     depends_on:
       mysql:
         condition: service_healthy
@@ -117,8 +132,10 @@ services:
     image: project-gl-frontend:latest
     container_name: rpa-frontend
     restart: unless-stopped
+    environment:
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-80}:80"
     depends_on:
       backend:
         condition: service_healthy

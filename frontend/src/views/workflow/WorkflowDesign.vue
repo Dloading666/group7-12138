@@ -5,7 +5,7 @@
         <div class="designer-title-group">
           <div class="eyebrow">Workflow Studio V2</div>
           <h2>{{ pageTitle }}</h2>
-          <p>顶部 AI 生成，中间自由画布，右侧结构化 Inspector。草稿可调试，发布后按图执行。</p>
+          <p>中间自由画布，右侧结构化 Inspector。用户可以从官方模板起步，再按自己的想法继续设计流程。</p>
         </div>
         <div class="designer-header-actions">
           <div class="draft-indicator" :data-state="draftState">{{ draftStateText }}</div>
@@ -24,31 +24,6 @@
         </div>
       </div>
 
-      <section class="ai-strip">
-        <div class="ai-strip-copy">
-          <div class="ai-badge">AI Draft</div>
-          <h3>先生成一个初版图，再在画布里继续打磨</h3>
-          <p>AI 只负责生成初始流程图和输入 Schema，不会直接发布。</p>
-        </div>
-        <div class="ai-strip-input">
-          <el-input
-            v-model="assistantPrompt"
-            :disabled="drafting || isViewMode"
-            maxlength="600"
-            placeholder="例如：抓取指定页面，判断金额是否超标，超标则并行通知财务和风控，否则整理结果后结束"
-            @keyup.enter.exact.prevent="handleGenerateDraft"
-          />
-          <el-button
-            type="primary"
-            :loading="drafting"
-            :disabled="isViewMode"
-            @click="handleGenerateDraft"
-          >
-            生成初始流程图
-          </el-button>
-        </div>
-      </section>
-
       <div class="designer-content">
         <section class="canvas-stage">
           <div class="stage-toolbar">
@@ -61,6 +36,25 @@
                     :key="item.type"
                     :label="item.name"
                     :value="item.type"
+                  />
+                </el-select>
+                <el-button
+                  v-if="showTemplateSelector"
+                  plain
+                  @click="applySelectedTemplate()"
+                >
+                  可用模板
+                </el-button>
+                <el-select
+                  v-if="showTemplateSelector"
+                  v-model="selectedTemplateKey"
+                  style="width: 240px"
+                >
+                  <el-option
+                    v-for="item in templateOptions"
+                    :key="item.key"
+                    :label="item.label"
+                    :value="item.key"
                   />
                 </el-select>
                 <el-button type="primary" :disabled="isViewMode" @click="handleAddNode">
@@ -195,12 +189,30 @@
                 </el-form-item>
 
                 <template v-if="selectedNode.type === 'http_request'">
+                  <el-form-item label="Provider">
+                    <el-select
+                      v-model="selectedNode.config.provider"
+                      :disabled="isViewMode"
+                      placeholder="Select provider"
+                      @change="handleHttpProviderChange"
+                    >
+                      <el-option label="Generic HTTP" value="" />
+                      <el-option label="Resend Email" value="resend_email" />
+                    </el-select>
+                  </el-form-item>
                   <el-form-item label="URL">
-                    <el-input v-model="selectedNode.config.url" :disabled="isViewMode" placeholder="https://example.com/api" />
+                    <el-input
+                      v-model="selectedNode.config.url"
+                      :disabled="isViewMode || selectedNode.config.provider === 'resend_email'"
+                      placeholder="https://example.com/api"
+                    />
                   </el-form-item>
                   <div class="two-col-grid">
                     <el-form-item label="Method">
-                      <el-select v-model="selectedNode.config.method" :disabled="isViewMode">
+                      <el-select
+                        v-model="selectedNode.config.method"
+                        :disabled="isViewMode || selectedNode.config.provider === 'resend_email'"
+                      >
                         <el-option label="GET" value="GET" />
                         <el-option label="POST" value="POST" />
                         <el-option label="PUT" value="PUT" />
@@ -211,7 +223,46 @@
                       <el-input-number v-model="selectedNode.config.timeout" :disabled="isViewMode" :min="1000" :step="1000" controls-position="right" style="width: 100%" />
                     </el-form-item>
                   </div>
-                  <div class="collection-editor">
+                  <el-alert
+                    v-if="selectedNode.config.provider === 'resend_email'"
+                    type="success"
+                    :closable="false"
+                    title="Resend 节点会使用后端环境变量 RESEND_API_KEY 和 RESEND_FROM_EMAIL。"
+                    show-icon
+                  />
+                  <template v-if="selectedNode.config.provider === 'resend_email'">
+                    <el-form-item label="To Template">
+                      <el-input v-model="selectedNode.config.to" :disabled="isViewMode" placeholder="{{ input.to_email }}" />
+                    </el-form-item>
+                    <el-form-item label="Subject Template">
+                      <el-input
+                        v-model="selectedNode.config.subjectTemplate"
+                        :disabled="isViewMode"
+                        type="textarea"
+                        :rows="3"
+                        placeholder="{{ nodes.ai_generate_email.output.structured.subject }}"
+                      />
+                    </el-form-item>
+                    <el-form-item label="Text Template">
+                      <el-input
+                        v-model="selectedNode.config.textTemplate"
+                        :disabled="isViewMode"
+                        type="textarea"
+                        :rows="5"
+                        placeholder="{{ nodes.ai_generate_email.output.structured.body }}"
+                      />
+                    </el-form-item>
+                    <el-form-item label="HTML Template (Optional)">
+                      <el-input
+                        v-model="selectedNode.config.htmlTemplate"
+                        :disabled="isViewMode"
+                        type="textarea"
+                        :rows="4"
+                        placeholder="<div>{{ nodes.ai_generate_email.output.structured.body }}</div>"
+                      />
+                    </el-form-item>
+                  </template>
+                  <div v-else class="collection-editor">
                     <div class="editor-head">
                       <strong>Headers</strong>
                       <el-button link :disabled="isViewMode" @click="addHeaderRow">新增</el-button>
@@ -223,7 +274,7 @@
                       <el-button link type="danger" :disabled="isViewMode" @click="removeHeaderRow(index)">删除</el-button>
                     </div>
                   </div>
-                  <el-form-item label="Body">
+                  <el-form-item v-if="selectedNode.config.provider !== 'resend_email'" label="Body">
                     <el-input
                       v-model="selectedNode.config.body"
                       :disabled="isViewMode"
@@ -470,6 +521,46 @@
                     placeholder="说明这个流程的业务目标、输入和输出"
                   />
                 </el-form-item>
+                <div class="schema-section">
+                  <div class="section-inline-head">
+                    <div>
+                      <h4>执行机器人绑定</h4>
+                      <p>按节点类型统一绑定采集、分析和通知机器人，运行记录会显示每一步的执行机器人。</p>
+                    </div>
+                  </div>
+                  <div class="two-col-grid">
+                    <el-form-item label="采集机器人">
+                      <el-select v-model="workflowForm.crawlRobotId" :disabled="isViewMode" clearable placeholder="选择 data_collector 机器人">
+                        <el-option
+                          v-for="robot in crawlRobotOptions"
+                          :key="robot.id"
+                          :label="formatRobotOptionLabel(robot)"
+                          :value="robot.id"
+                        />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="分析机器人">
+                      <el-select v-model="workflowForm.analysisRobotId" :disabled="isViewMode" clearable placeholder="选择 report_generator 机器人">
+                        <el-option
+                          v-for="robot in analysisRobotOptions"
+                          :key="robot.id"
+                          :label="formatRobotOptionLabel(robot)"
+                          :value="robot.id"
+                        />
+                      </el-select>
+                    </el-form-item>
+                  </div>
+                  <el-form-item label="通知机器人">
+                    <el-select v-model="workflowForm.notificationRobotId" :disabled="isViewMode" clearable placeholder="选择 notification 机器人">
+                      <el-option
+                        v-for="robot in notificationRobotOptions"
+                        :key="robot.id"
+                        :label="formatRobotOptionLabel(robot)"
+                        :value="robot.id"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </div>
               </el-form>
 
               <div class="schema-section">
@@ -527,8 +618,8 @@
               <ul v-else class="issue-list">
                 <li v-for="issue in validationIssues" :key="issue">{{ issue }}</li>
               </ul>
-              <ul v-if="assistantWarnings.length > 0" class="warning-list">
-                <li v-for="warning in assistantWarnings" :key="warning">{{ warning }}</li>
+              <ul v-if="robotBindingWarnings.length > 0" class="warning-list">
+                <li v-for="warning in robotBindingWarnings" :key="warning">{{ warning }}</li>
               </ul>
             </div>
           </div>
@@ -549,6 +640,14 @@
               >
                 保存并试跑
               </el-button>
+              <el-button
+                v-if="!isViewMode"
+                plain
+                size="small"
+                @click="fillDebugInputFromSchema(true)"
+              >
+                填充示例输入
+              </el-button>
             </div>
             <div class="panel-body scrollable">
               <el-input
@@ -556,7 +655,7 @@
                 v-model="debugInputText"
                 type="textarea"
                 :rows="5"
-                placeholder='调试输入 JSON，例如 { "url": "https://example.com" }'
+                placeholder='调试输入 JSON，例如 { "target_url": "https://example.com", "to_email": "demo@example.com" }'
               />
 
               <div v-if="debugRuns.length > 0" class="debug-run-tabs">
@@ -592,6 +691,7 @@
                       <el-tag size="small" :type="debugStatusType(step.status)">{{ step.status }}</el-tag>
                     </div>
                     <div class="step-meta">{{ step.nodeType }} · {{ step.branchKey || 'main' }}</div>
+                    <div v-if="step.robotName" class="step-meta">机器人 · {{ step.robotName }} <span v-if="step.robotType">({{ step.robotType }})</span></div>
                     <div v-if="step.errorMessage" class="step-error">{{ step.errorMessage }}</div>
                   </div>
                 </div>
@@ -616,7 +716,6 @@ import { Handle, MarkerType, Position, VueFlow, useVueFlow } from '@vue-flow/cor
 import {
   createWorkflow,
   createWorkflowDebugRun,
-  createWorkflowDraft,
   getAllNodeTypes,
   getWorkflowById,
   getWorkflowDebugRunDetail,
@@ -624,18 +723,31 @@ import {
   publishWorkflow,
   updateWorkflow
 } from '../../api/workflow.js'
+import { getAllRobots } from '../../api/robot.js'
+import {
+  DEFAULT_OFFICIAL_TEMPLATE_KEY,
+  createOfficialDemoTemplateGraph,
+  createOfficialDemoTemplateSchemaFields,
+  getOfficialDemoTemplateMeta,
+  getOfficialDemoTemplateOptions
+} from './officialDemoTemplate.js'
 
 const route = useRoute()
 const router = useRouter()
 const { fitView } = useVueFlow()
 
 const workflowId = computed(() => (route.query.id ? Number(route.query.id) : null))
-const mode = computed(() => String(route.query.mode || (workflowId.value ? 'edit' : 'create')))
+const mode = computed(() => {
+  const currentMode = String(route.query.mode || (workflowId.value ? 'edit' : 'create'))
+  return currentMode === 'ai' ? 'create' : currentMode
+})
 const isViewMode = computed(() => mode.value === 'view')
+const showTemplateSelector = computed(() => mode.value === 'create' && !workflowId.value && !isViewMode.value)
+const templateOptions = getOfficialDemoTemplateOptions()
+const selectedTemplateKey = ref(DEFAULT_OFFICIAL_TEMPLATE_KEY)
 
 const pageTitle = computed(() => {
   if (isViewMode.value) return '查看流程设计器'
-  if (mode.value === 'ai') return 'AI 生成流程设计器'
   return workflowId.value ? '编辑流程设计器' : '新建流程设计器'
 })
 
@@ -669,7 +781,18 @@ const NODE_LIBRARY = {
     color: '#2f6bff',
     category: '采集',
     description: '请求接口或网页',
-    defaultConfig: { url: '', method: 'GET', headers: {}, body: '', timeout: 30000 }
+    defaultConfig: {
+      url: '',
+      method: 'GET',
+      headers: {},
+      body: '',
+      provider: '',
+      to: '',
+      subjectTemplate: '',
+      textTemplate: '',
+      htmlTemplate: '',
+      timeout: 30000
+    }
   },
   web_crawl: {
     type: 'web_crawl',
@@ -766,14 +889,14 @@ const workflowForm = reactive({
   workflowCode: '',
   description: '',
   category: 'data_collection',
-  status: 'draft'
+  status: 'draft',
+  crawlRobotId: null,
+  analysisRobotId: null,
+  notificationRobotId: null
 })
 
-const assistantPrompt = ref('')
-const assistantWarnings = ref([])
 const saving = ref(false)
 const publishing = ref(false)
-const drafting = ref(false)
 const debugging = ref(false)
 const draftState = ref('saved')
 const draftStateText = computed(() => {
@@ -805,6 +928,7 @@ const statusTagType = computed(() => {
 })
 
 const nodeTypeOptions = ref([])
+const robotOptions = ref([])
 const insertNodeType = ref('http_request')
 const inputFields = ref([])
 const graphNodes = ref([])
@@ -819,6 +943,37 @@ const branchRows = ref([])
 const debugInputText = ref('{}')
 const debugRuns = ref([])
 const latestDebugRun = ref(null)
+
+const crawlRobotOptions = computed(() => filterRobotOptionsByType('data_collector'))
+const analysisRobotOptions = computed(() => filterRobotOptionsByType('report_generator'))
+const notificationRobotOptions = computed(() => filterRobotOptionsByType('notification'))
+
+const robotBindingWarnings = computed(() => {
+  const warnings = []
+  const nodeTypes = new Set(graphNodes.value.map((node) => normalizeNodeType(node.type)))
+  if (nodeTypes.has('web_crawl')) {
+    if (!crawlRobotOptions.value.length) {
+      warnings.push('当前没有可用的采集机器人，请先创建 data_collector 类型机器人。')
+    } else if (!workflowForm.crawlRobotId) {
+      warnings.push('未绑定采集机器人，当前会继续走默认采集执行器。')
+    }
+  }
+  if (nodeTypes.has('ai_filter')) {
+    if (!analysisRobotOptions.value.length) {
+      warnings.push('当前没有可用的分析机器人，请先创建 report_generator 类型机器人。')
+    } else if (!workflowForm.analysisRobotId) {
+      warnings.push('未绑定分析机器人，当前会继续走默认 AI 执行器。')
+    }
+  }
+  if (nodeTypes.has('http_request')) {
+    if (!notificationRobotOptions.value.length) {
+      warnings.push('当前没有可用的通知机器人，请先创建 notification 类型机器人。')
+    } else if (!workflowForm.notificationRobotId) {
+      warnings.push('未绑定通知机器人，当前会继续走默认通知执行器。')
+    }
+  }
+  return warnings
+})
 
 const selectedNode = computed(() => graphNodes.value.find((node) => node.id === selectedNodeId.value) || null)
 const selectedEdge = computed(() => graphEdges.value.find((edge) => edge.id === selectedEdgeId.value) || null)
@@ -875,7 +1030,10 @@ const currentSignature = computed(() =>
       workflowCode: workflowForm.workflowCode,
       description: workflowForm.description,
       category: workflowForm.category,
-      status: workflowForm.status
+      status: workflowForm.status,
+      crawlRobotId: workflowForm.crawlRobotId,
+      analysisRobotId: workflowForm.analysisRobotId,
+      notificationRobotId: workflowForm.notificationRobotId
     },
     inputFields: inputFields.value,
     graphNodes: graphNodes.value,
@@ -960,6 +1118,11 @@ function normalizeNodeConfig(type, rawConfig = {}) {
     merged.method = merged.method || 'GET'
     merged.timeout = Number(merged.timeout || 30000)
     merged.body = merged.body ?? ''
+    merged.provider = merged.provider || ''
+    merged.to = merged.to || ''
+    merged.subjectTemplate = merged.subjectTemplate || ''
+    merged.textTemplate = merged.textTemplate || ''
+    merged.htmlTemplate = merged.htmlTemplate || ''
   }
 
   if (type === 'parallel_split') {
@@ -990,6 +1153,16 @@ function normalizeNodeConfig(type, rawConfig = {}) {
   }
 
   return merged
+}
+
+function filterRobotOptionsByType(type) {
+  return robotOptions.value.filter((robot) => robot.type === type)
+}
+
+function formatRobotOptionLabel(robot) {
+  const typeLabel = robot.typeDisplayName || robot.type || 'Robot'
+  const statusLabel = robot.statusDisplayName || robot.status || '-'
+  return `${robot.name} · ${typeLabel} · ${statusLabel}`
 }
 
 function getInputHandles(node) {
@@ -1085,12 +1258,134 @@ function createSchemaField() {
   }
 }
 
+function normalizeFieldDefaultValue(field) {
+  const raw = String(field?.defaultValue ?? '').trim()
+  if (!raw) {
+    return undefined
+  }
+
+  if (field.type === 'number' || field.type === 'integer') {
+    const value = Number(raw)
+    return Number.isNaN(value) ? undefined : value
+  }
+  if (field.type === 'boolean') {
+    if (raw === 'true') return true
+    if (raw === 'false') return false
+  }
+  if (field.type === 'object' || field.type === 'array') {
+    return safeJsonParse(raw, field.type === 'array' ? [] : {})
+  }
+  return raw
+}
+
+function inferFieldExampleValue(field) {
+  const defaultValue = normalizeFieldDefaultValue(field)
+  if (defaultValue !== undefined) {
+    return defaultValue
+  }
+
+  const name = String(field?.name || '').trim().toLowerCase()
+  const format = String(field?.format || '').trim().toLowerCase()
+
+  if ((name.includes('url') || format === 'url') && name.includes('email_api')) {
+    return 'https://httpbin.org/post'
+  }
+  if ((name.includes('url') || format === 'url') && (name.includes('data_api') || name.includes('source') || name.includes('request_api'))) {
+    return 'http://localhost:8080/api/auth/health'
+  }
+  if ((name.includes('url') || format === 'url') && (name.includes('notify') || name.includes('webhook'))) {
+    return 'https://httpbin.org/post'
+  }
+  if ((name.includes('url') || format === 'url') && (name.includes('target') || name.includes('page') || name.includes('site') || name.includes('article'))) {
+    return 'https://example.com'
+  }
+  if (name.includes('api_key') || name.includes('token') || name.includes('secret')) {
+    return 'demo-key'
+  }
+  if (name.includes('email')) {
+    return 'demo@example.com'
+  }
+  if (name.includes('threshold') || name.includes('amount') || field.type === 'number' || field.type === 'integer') {
+    return 10000
+  }
+  if (field.type === 'boolean') {
+    return true
+  }
+  if (field.type === 'array') {
+    return []
+  }
+  if (field.type === 'object') {
+    return {}
+  }
+  if (name.includes('url') || format === 'url') {
+    return 'https://example.com'
+  }
+  return 'demo'
+}
+
+function buildDebugInputTemplate() {
+  return inputFields.value.reduce((result, field) => {
+    const name = String(field.name || '').trim()
+    if (!name) return result
+    result[name] = inferFieldExampleValue(field)
+    return result
+  }, {})
+}
+
+function isBlankObjectText(value) {
+  const text = String(value ?? '').trim()
+  return !text || text === '{}' || text === '{ }'
+}
+
+function fillDebugInputFromSchema(force = false) {
+  const template = buildDebugInputTemplate()
+  if (!Object.keys(template).length) {
+    if (force) {
+      debugInputText.value = '{}'
+      ElMessage.warning('当前还没有可用的输入字段')
+    }
+    return
+  }
+
+  const shouldOverwrite = force || isBlankObjectText(debugInputText.value)
+  if (!shouldOverwrite) {
+    const current = safeJsonParse(debugInputText.value, null)
+    if (current && typeof current === 'object' && !Array.isArray(current) && Object.keys(current).length > 0) {
+      return
+    }
+  }
+
+  debugInputText.value = JSON.stringify(template, null, 2)
+  if (force) {
+    ElMessage.success('已按输入 Schema 填充示例调试参数')
+  }
+}
+
+function validateDebugInput(debugInput) {
+  const missing = inputFields.value
+    .filter((field) => field.required)
+    .map((field) => String(field.name || '').trim())
+    .filter(Boolean)
+    .filter((name) => {
+      const value = debugInput[name]
+      if (value === null || value === undefined) return true
+      if (typeof value === 'string') return !value.trim()
+      if (Array.isArray(value)) return value.length === 0
+      return false
+    })
+
+  if (missing.length) {
+    throw new Error(`调试输入缺少必填字段：${missing.join('、')}`)
+  }
+}
+
 function createId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
 }
 
 function createDefaultGraph() {
   return {
+    robotBindings: buildRobotBindingsPayload(),
     nodes: [
       {
         id: 'start_1',
@@ -1119,6 +1414,40 @@ function createDefaultGraph() {
       }
     ]
   }
+}
+
+function applyOfficialTemplateState(templateKey = selectedTemplateKey.value) {
+  const templateMeta = getOfficialDemoTemplateMeta(templateKey)
+  workflowForm.name = '网站采集邮件通知'
+  workflowForm.workflowCode = 'WEBSITE_EMAIL_NOTIFY'
+  workflowForm.description = '抓取指定网站内容，用 AI 整理成详细邮件摘要，再通过 HTTP 请求发送到用户填写的邮箱地址。'
+  workflowForm.category = 'notification'
+  workflowForm.status = 'draft'
+  workflowForm.crawlRobotId = null
+  workflowForm.analysisRobotId = null
+  workflowForm.notificationRobotId = null
+
+  workflowForm.name = templateMeta.workflowName
+  workflowForm.workflowCode = templateMeta.workflowCode
+  workflowForm.description = templateMeta.description
+  workflowForm.category = templateMeta.category
+  inputFields.value = createOfficialDemoTemplateSchemaFields(templateKey, createId)
+  const templateGraph = createOfficialDemoTemplateGraph(templateKey, { normalizeNodeConfig })
+  graphNodes.value = templateGraph.nodes
+  graphEdges.value = templateGraph.edges
+  selectedNodeId.value = ''
+  selectedEdgeId.value = ''
+  fillDebugInputFromSchema(true)
+}
+
+async function applySelectedTemplate(templateKey = selectedTemplateKey.value) {
+  if (!showTemplateSelector.value) return
+
+  selectedTemplateKey.value = templateKey
+  resetDesigner(templateKey)
+  await nextTick()
+  handleFitView()
+  ElMessage.success(`已加载模板：${getOfficialDemoTemplateMeta(templateKey).label}`)
 }
 
 function buildInputSchema() {
@@ -1176,6 +1505,7 @@ function buildInputSchema() {
 function buildGraphPayload() {
   return {
     version: 2,
+    robotBindings: buildRobotBindingsPayload(),
     nodes: graphNodes.value.map((node) => ({
       id: node.id,
       type: normalizeNodeType(node.type),
@@ -1207,6 +1537,22 @@ function sanitizeConfigForPayload(node) {
   return config
 }
 
+function buildRobotBindingsPayload() {
+  return {
+    crawlRobotId: normalizeRobotBindingValue(workflowForm.crawlRobotId),
+    analysisRobotId: normalizeRobotBindingValue(workflowForm.analysisRobotId),
+    notificationRobotId: normalizeRobotBindingValue(workflowForm.notificationRobotId)
+  }
+}
+
+function normalizeRobotBindingValue(value) {
+  if (value === undefined || value === null || value === '') {
+    return null
+  }
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
 function buildPayload() {
   return {
     name: workflowForm.name.trim(),
@@ -1214,6 +1560,9 @@ function buildPayload() {
     description: workflowForm.description,
     category: workflowForm.category,
     status: workflowForm.status,
+    crawlRobotId: normalizeRobotBindingValue(workflowForm.crawlRobotId),
+    analysisRobotId: normalizeRobotBindingValue(workflowForm.analysisRobotId),
+    notificationRobotId: normalizeRobotBindingValue(workflowForm.notificationRobotId),
     inputSchema: JSON.stringify(buildInputSchema(), null, 2),
     graph: JSON.stringify(buildGraphPayload(), null, 2)
   }
@@ -1272,8 +1621,34 @@ function parseGraph(graphValue) {
 
   return {
     nodes,
-    edges: edges.length ? edges : createDefaultGraph().edges
+    edges: edges.length ? edges : createDefaultGraph().edges,
+    robotBindings: parseRobotBindings(rawGraph.robotBindings)
   }
+}
+
+function parseRobotBindings(rawBindings) {
+  const bindings = rawBindings && typeof rawBindings === 'object' ? rawBindings : {}
+  return {
+    crawlRobotId: normalizeRobotBindingValue(bindings.crawlRobotId),
+    analysisRobotId: normalizeRobotBindingValue(bindings.analysisRobotId),
+    notificationRobotId: normalizeRobotBindingValue(bindings.notificationRobotId)
+  }
+}
+
+function applyRobotBindingsToForm(bindings = {}, preserveExisting = false) {
+  const normalized = {
+    crawlRobotId: normalizeRobotBindingValue(bindings.crawlRobotId),
+    analysisRobotId: normalizeRobotBindingValue(bindings.analysisRobotId),
+    notificationRobotId: normalizeRobotBindingValue(bindings.notificationRobotId)
+  }
+
+  if (preserveExisting && !normalized.crawlRobotId && !normalized.analysisRobotId && !normalized.notificationRobotId) {
+    return
+  }
+
+  workflowForm.crawlRobotId = normalized.crawlRobotId
+  workflowForm.analysisRobotId = normalized.analysisRobotId
+  workflowForm.notificationRobotId = normalized.notificationRobotId
 }
 
 function findNode(id) {
@@ -1343,6 +1718,22 @@ function removeHeaderRow(index) {
 function syncHeaderRows() {
   if (!selectedNode.value) return
   selectedNode.value.config.headers = rowsToObject(headerRows.value)
+}
+
+function handleHttpProviderChange(provider) {
+  if (!selectedNode.value || selectedNode.value.type !== 'http_request') return
+  if (provider !== 'resend_email') return
+
+  selectedNode.value.config.provider = 'resend_email'
+  selectedNode.value.config.url = 'https://api.resend.com/emails'
+  selectedNode.value.config.method = 'POST'
+  selectedNode.value.config.headers = {}
+  selectedNode.value.config.body = ''
+  selectedNode.value.config.to = selectedNode.value.config.to || '{{ input.to_email }}'
+  selectedNode.value.config.subjectTemplate = selectedNode.value.config.subjectTemplate || '{{ nodes.ai_generate_email.output.structured.subject }}'
+  selectedNode.value.config.textTemplate = selectedNode.value.config.textTemplate || '{{ nodes.ai_generate_email.output.structured.body }}'
+  selectedNode.value.config.htmlTemplate = selectedNode.value.config.htmlTemplate || ''
+  headerRows.value = []
 }
 
 function addCookieRow() {
@@ -1472,7 +1863,7 @@ function generateWorkflowCode(name) {
 }
 
 async function handleAutoSave() {
-  if (saving.value || publishing.value || drafting.value || debugging.value) return
+  if (saving.value || publishing.value || debugging.value) return
   try {
     draftState.value = 'saving'
     await saveDraft({ silent: true })
@@ -1481,12 +1872,37 @@ async function handleAutoSave() {
   }
 }
 
+function isWorkflowMissingError(error) {
+  return String(error?.message || '').includes('Workflow not found')
+}
+
+async function createReplacementDraft(payload, silent = false) {
+  const response = await createWorkflow(payload)
+  if (response.data?.id) {
+    await router.replace({ path: '/workflow/design', query: { id: String(response.data.id), mode: 'edit' } })
+  }
+  if (!silent) {
+    ElMessage.warning('原流程不存在，已按当前内容创建新草稿')
+  }
+  return response
+}
+
 async function saveDraft({ silent = false } = {}) {
   ensureWorkflowBasics()
   const payload = buildPayload()
-  const response = workflowId.value
-    ? await updateWorkflow(workflowId.value, payload)
-    : await createWorkflow(payload)
+  let response
+  if (workflowId.value) {
+    try {
+      response = await updateWorkflow(workflowId.value, payload)
+    } catch (error) {
+      if (!isWorkflowMissingError(error)) {
+        throw error
+      }
+      response = await createReplacementDraft(payload, silent)
+    }
+  } else {
+    response = await createWorkflow(payload)
+  }
 
   if (!workflowId.value && response.data?.id) {
     await router.replace({ path: '/workflow/design', query: { id: String(response.data.id), mode: 'edit' } })
@@ -1529,44 +1945,6 @@ async function handlePublish() {
     ElMessage.error(error.message || '流程发布失败')
   } finally {
     publishing.value = false
-  }
-}
-
-async function handleGenerateDraft() {
-  if (isViewMode.value) return
-  if (!assistantPrompt.value.trim()) {
-    ElMessage.warning('请先描述你想生成的流程')
-    return
-  }
-
-  drafting.value = true
-  try {
-    const response = await createWorkflowDraft({
-      prompt: assistantPrompt.value.trim(),
-      currentGraph: JSON.stringify(buildGraphPayload(), null, 2),
-      currentInputSchema: JSON.stringify(buildInputSchema(), null, 2)
-    })
-    const draft = response.data || {}
-    workflowForm.name = draft.name || workflowForm.name
-    workflowForm.description = draft.description || workflowForm.description
-    workflowForm.category = draft.category || workflowForm.category
-    workflowForm.status = 'draft'
-    if (!workflowForm.workflowCode && workflowForm.name) {
-      workflowForm.workflowCode = generateWorkflowCode(workflowForm.name)
-    }
-    inputFields.value = parseSchemaFields(draft.inputSchema)
-    const parsedGraph = parseGraph(draft.graph)
-    graphNodes.value = parsedGraph.nodes
-    graphEdges.value = parsedGraph.edges
-    assistantWarnings.value = Array.isArray(draft.warnings) ? draft.warnings : []
-    selectedNodeId.value = ''
-    selectedEdgeId.value = ''
-    await handleAutoLayout()
-    ElMessage.success('AI 初版流程图已生成，可以继续在画布中细化')
-  } catch (error) {
-    ElMessage.error(error.message || 'AI 生成流程图失败')
-  } finally {
-    drafting.value = false
   }
 }
 
@@ -1976,14 +2354,20 @@ async function loadNodeTypes() {
   }
 }
 
+async function loadRobots() {
+  try {
+    const response = await getAllRobots()
+    robotOptions.value = Array.isArray(response.data) ? response.data : []
+  } catch (error) {
+    robotOptions.value = []
+  }
+}
+
 async function loadWorkflow() {
   hydrating = true
   try {
     if (!workflowId.value) {
       resetDesigner()
-      if (mode.value === 'ai') {
-        assistantPrompt.value = ''
-      }
       return
     }
 
@@ -1995,11 +2379,18 @@ async function loadWorkflow() {
     workflowForm.category = workflow.category || 'data_collection'
     workflowForm.status = workflow.status || 'draft'
     inputFields.value = parseSchemaFields(workflow.inputSchema)
+    fillDebugInputFromSchema()
     const parsedGraph = parseGraph(workflow.graph || workflow.config)
     graphNodes.value = parsedGraph.nodes
     graphEdges.value = parsedGraph.edges
-    assistantWarnings.value = []
+    applyRobotBindingsToForm(parsedGraph.robotBindings)
     await loadDebugRuns()
+  } catch (error) {
+    if (isWorkflowMissingError(error)) {
+      await router.replace({ path: '/workflow/design', query: { mode: 'create' } })
+      return
+    }
+    throw error
   } finally {
     selectedNodeId.value = ''
     selectedEdgeId.value = ''
@@ -2012,19 +2403,10 @@ async function loadWorkflow() {
   }
 }
 
-function resetDesigner() {
-  workflowForm.name = ''
-  workflowForm.workflowCode = ''
-  workflowForm.description = ''
-  workflowForm.category = 'data_collection'
-  workflowForm.status = 'draft'
-  inputFields.value = []
-  const defaults = createDefaultGraph()
-  graphNodes.value = defaults.nodes
-  graphEdges.value = defaults.edges
-  assistantWarnings.value = []
+function resetDesigner(templateKey = selectedTemplateKey.value) {
   debugRuns.value = []
   latestDebugRun.value = null
+  applyOfficialTemplateState(templateKey)
 }
 
 async function loadDebugRuns() {
@@ -2078,6 +2460,17 @@ function stopDebugPolling() {
   }
 }
 
+async function normalizeLegacyModeRoute() {
+  if (route.query.mode !== 'ai') return
+  await router.replace({
+    path: route.path,
+    query: {
+      ...route.query,
+      mode: 'create'
+    }
+  })
+}
+
 async function handleDebugRun() {
   if (isViewMode.value) return
   debugging.value = true
@@ -2090,6 +2483,7 @@ async function handleDebugRun() {
     if (debugInput === null || Array.isArray(debugInput) || typeof debugInput !== 'object') {
       throw new Error('调试输入必须是合法 JSON 对象')
     }
+    validateDebugInput(debugInput)
 
     await saveDraft({ silent: true })
     const response = await createWorkflowDebugRun(workflowId.value, { inputConfig: debugInput })
@@ -2114,11 +2508,17 @@ function debugStatusType(status) {
 }
 
 function handleBack() {
+  if (workflowForm.status === 'draft') {
+    router.push({ path: '/workflow/list', query: { view: 'drafts' } })
+    return
+  }
   router.push('/workflow/list')
 }
 
 onMounted(async () => {
+  await normalizeLegacyModeRoute()
   await loadNodeTypes()
+  await loadRobots()
   await loadWorkflow()
 })
 
@@ -2152,7 +2552,6 @@ onBeforeUnmount(() => {
 }
 
 .designer-header,
-.ai-strip,
 .canvas-stage,
 .inspector-panel,
 .info-panel {
@@ -2172,7 +2571,6 @@ onBeforeUnmount(() => {
 }
 
 .designer-title-group h2,
-.ai-strip-copy h3,
 .panel-header h3 {
   margin: 0;
   font-family: 'Trebuchet MS', 'Segoe UI', 'PingFang SC', sans-serif;
@@ -2180,7 +2578,6 @@ onBeforeUnmount(() => {
 }
 
 .designer-title-group p,
-.ai-strip-copy p,
 .section-inline-head p,
 .toolbar-hint,
 .node-card-desc,
@@ -2193,7 +2590,6 @@ onBeforeUnmount(() => {
 }
 
 .eyebrow,
-.ai-badge,
 .panel-kicker {
   text-transform: uppercase;
   letter-spacing: 0.16em;
@@ -2246,38 +2642,6 @@ onBeforeUnmount(() => {
 .draft-indicator[data-state='error'] {
   color: #b91c1c;
   background: rgba(239, 68, 68, 0.14);
-}
-
-.ai-strip {
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 18px;
-  padding: 22px 24px;
-}
-
-.ai-strip-copy {
-  padding-right: 8px;
-}
-
-.ai-badge {
-  margin-bottom: 10px;
-  color: #ff7a18;
-}
-
-.ai-strip-copy p {
-  margin: 8px 0 0;
-  line-height: 1.6;
-}
-
-.ai-strip-input {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.ai-strip-input :deep(.el-input__wrapper) {
-  min-height: 48px;
-  border-radius: 18px;
 }
 
 .designer-content {
@@ -2617,7 +2981,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1280px) {
-  .ai-strip,
   .designer-content {
     grid-template-columns: 1fr;
   }
@@ -2629,7 +2992,6 @@ onBeforeUnmount(() => {
 
 @media (max-width: 960px) {
   .designer-header,
-  .ai-strip-input,
   .stage-toolbar {
     flex-direction: column;
   }

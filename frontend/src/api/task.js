@@ -92,3 +92,53 @@ export function getTaskStats(config = {}) {
     ...config
   })
 }
+
+export function getTaskRuns(taskId, config = {}) {
+  return request({
+    url: `/tasks/${taskId}/runs`,
+    method: 'get',
+    ...config
+  })
+}
+
+export function getTaskRunDetail(runId, config = {}) {
+  return request({
+    url: `/task-runs/${runId}`,
+    method: 'get',
+    ...config
+  })
+}
+
+export function getTaskRunLogs(runId, config = {}) {
+  return request({
+    url: `/task-runs/${runId}/logs`,
+    method: 'get',
+    ...config
+  })
+}
+
+export function getTaskRunCrawlResult(runId, config = {}) {
+  return request({
+    url: `/task-runs/${runId}/crawl-result`,
+    method: 'get',
+    ...config
+  })
+}
+
+export function getTaskRunAnalysisMessages(runId, config = {}) {
+  return request({
+    url: `/task-runs/${runId}/analysis/messages`,
+    method: 'get',
+    ...config
+  })
+}
+
+export function sendTaskRunAnalysisMessage(runId, question, config = {}) {
+  return request({
+    url: `/task-runs/${runId}/analysis/messages`,
+    method: 'post',
+    data: { question },
+    timeout: 180000,
+    ...config
+  })
+}

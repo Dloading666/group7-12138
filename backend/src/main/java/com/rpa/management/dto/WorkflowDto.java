@@ -22,6 +22,9 @@ public class WorkflowDTO {
     private String config;
     private String inputSchema;
     private String graph;
+    private Long crawlRobotId;
+    private Long analysisRobotId;
+    private Long notificationRobotId;
     private Long latestVersionId;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

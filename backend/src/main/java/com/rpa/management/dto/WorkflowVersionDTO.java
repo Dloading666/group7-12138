@@ -34,4 +34,10 @@ public class WorkflowVersionDTO {
     private String inputSchema;
 
     private String graph;
+
+    private Long crawlRobotId;
+
+    private Long analysisRobotId;
+
+    private Long notificationRobotId;
 }

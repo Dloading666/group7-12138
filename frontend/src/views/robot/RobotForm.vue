@@ -45,9 +45,9 @@
 
               <el-form-item label="运行状态" prop="status">
                 <el-radio-group v-model="robotForm.status" class="status-radio-group">
-                  <el-radio-button label="online">在线</el-radio-button>
-                  <el-radio-button label="offline">离线</el-radio-button>
-                  <el-radio-button label="running">运行中</el-radio-button>
+                  <el-radio-button value="online">在线</el-radio-button>
+                  <el-radio-button value="offline">离线</el-radio-button>
+                  <el-radio-button value="running">运行中</el-radio-button>
                 </el-radio-group>
               </el-form-item>
             </div>

@@ -46,6 +46,15 @@ public class WorkflowStepRun {
     @Column(name = "engine_task_id", length = 100)
     private String engineTaskId;
 
+    @Column(name = "robot_id")
+    private Long robotId;
+
+    @Column(name = "robot_name", length = 100)
+    private String robotName;
+
+    @Column(name = "robot_type", length = 50)
+    private String robotType;
+
     @Column(nullable = false, length = 20)
     private String status = "pending";
 

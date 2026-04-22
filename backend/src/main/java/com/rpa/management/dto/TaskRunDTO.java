@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -54,4 +55,6 @@ public class TaskRunDTO {
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;
+
+    private List<WorkflowStepRunDTO> stepRuns;
 }

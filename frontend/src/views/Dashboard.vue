@@ -9,7 +9,7 @@
         <el-button v-if="canViewTaskList" @click="goTo('/task/list')">任务列表</el-button>
         <el-button v-if="canCreateCollectTask" type="primary" @click="createTask">
           <el-icon><Plus /></el-icon>
-          新建采集任务
+          新增任务
         </el-button>
       </div>
     </div>
@@ -212,7 +212,7 @@ const currentDate = computed(() => {
 const availableShortcuts = computed(() => {
   const shortcuts = []
   if (canCreateCollectTask.value) {
-    shortcuts.push('新建采集任务')
+    shortcuts.push('新增任务')
   }
   if (canViewTaskList.value) {
     shortcuts.push('任务列表')
@@ -235,7 +235,7 @@ const heroDescription = computed(() => {
 
 const permissionNotice = computed(() => {
   if (!availableShortcuts.value.length) {
-    return '当前账号尚未分配业务模块权限，现阶段仅可访问首页概览。如需访问任务、采集、机器人或统计页面，请联系管理员在角色权限树中勾选对应项。'
+    return '当前账号尚未分配业务模块权限，现阶段仅可访问首页概览。如需访问任务、流程、机器人或统计页面，请联系管理员在角色权限树中勾选对应项。'
   }
   return `当前账号已开放 ${availableShortcuts.value.join('、')} 等入口；未勾选的页面和操作默认不会显示，也无法访问。`
 })
@@ -396,7 +396,7 @@ const goTo = (path) => {
 }
 
 const createTask = () => {
-  router.push('/task/list?createCrawl=1')
+  router.push('/task/list?create=1')
 }
 
 const getStatusText = (status) => {
@@ -429,8 +429,8 @@ const getTypeText = (type) => {
   const map = {
     crawl: '网页采集',
     spider: '网页采集',
-    ai_workflow: 'AI 工作流',
-    workflow: 'AI 工作流',
+    ai_workflow: '历史 AI 工作流',
+    workflow: '流程任务',
     report: '报表任务',
     'data-collection': '数据采集',
     'web-crawl': '网站抓取'

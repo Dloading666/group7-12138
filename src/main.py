@@ -243,8 +243,144 @@ service = GraphService()
 app = FastAPI()
 
 
+def _env_first(*names: str, default: str = "") -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and str(value).strip() != "":
+            return str(value).strip()
+    return default
+
+
+class LLMGateway:
+    def __init__(self):
+        self.protocol = _env_first("LLM_PROTOCOL", default="openai").lower()
+        self.api_key = _env_first("LLM_API_KEY", "OPENAI_API_KEY", default="")
+        self.base_url = _env_first(
+            "LLM_BASE_URL",
+            "OPENAI_BASE_URL",
+            default="https://api.minimaxi.com/v1"
+        ).rstrip("/")
+        self.model = _env_first("LLM_MODEL", "OPENAI_MODEL", default="MiniMax-M2.7")
+        self.timeout = float(_env_first("LLM_TIMEOUT_SECONDS", "OPENAI_TIMEOUT_SECONDS", default="180"))
+
+    def _resolve_model(self, payload: Dict[str, Any]) -> str:
+        return str(payload.get("model") or self.model).strip() or self.model
+
+    async def create_openai_compatible_response(self, payload: Dict[str, Any], request_id: str) -> Dict[str, Any]:
+        protocol = self.protocol
+        model = self._resolve_model(payload)
+        if protocol == "anthropic":
+            resolved_model, content, usage = await self._anthropic_completion(payload, model)
+        else:
+            resolved_model, content, usage = await self._openai_completion(payload, model)
+        return _build_openai_response(request_id=request_id, model=resolved_model, content=content, usage=usage)
+
+    async def create_anthropic_response(self, payload: Dict[str, Any], request_id: str) -> Dict[str, Any]:
+        protocol = self.protocol
+        model = self._resolve_model(payload)
+        if protocol == "anthropic":
+            resolved_model, content, usage = await self._anthropic_completion(payload, model)
+        else:
+            resolved_model, content, usage = await self._openai_completion(payload, model)
+        return {
+            "id": request_id,
+            "type": "message",
+            "role": "assistant",
+            "model": resolved_model,
+            "content": [{"type": "text", "text": content}],
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": int((usage or {}).get("prompt_tokens", 0)),
+                "output_tokens": int((usage or {}).get("completion_tokens", 0)),
+            },
+        }
+
+    async def _openai_completion(self, payload: Dict[str, Any], model: str):
+        if not self.api_key:
+            raise RuntimeError("LLM_API_KEY is not configured")
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        if "openrouter" in self.base_url.lower():
+            headers["HTTP-Referer"] = "https://github.com/rpa-management"
+            headers["X-Title"] = "RPA Management Platform"
+
+        request_payload = {
+            "model": model,
+            "messages": payload.get("messages", []),
+            "stream": False,
+            "temperature": float(payload.get("temperature", 0.1)),
+            "max_tokens": int(payload.get("max_tokens") or 512),
+        }
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(f"{self.base_url}/chat/completions", json=request_payload, headers=headers)
+            response.raise_for_status()
+            body = response.json()
+
+        content = _coerce_chat_text((((body.get("choices") or [{}])[0]).get("message") or {}).get("content"))
+        if not content:
+            raise RuntimeError("Empty assistant response")
+        return body.get("model") or model, content, body.get("usage")
+
+    async def _anthropic_completion(self, payload: Dict[str, Any], model: str):
+        if not self.api_key:
+            raise RuntimeError("LLM_API_KEY is not configured")
+
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+        }
+        system_messages = []
+        anthropic_messages = []
+        for item in payload.get("messages", []):
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "user")).lower()
+            content = _coerce_chat_text(item.get("content"))
+            if not content:
+                continue
+            if role == "system":
+                system_messages.append(content)
+                continue
+            anthropic_messages.append({
+                "role": "assistant" if role == "assistant" else "user",
+                "content": [{"type": "text", "text": content}]
+            })
+
+        request_payload = {
+            "model": model,
+            "max_tokens": int(payload.get("max_tokens") or 512),
+            "temperature": float(payload.get("temperature", 0.1)),
+            "messages": anthropic_messages,
+        }
+        if system_messages:
+            request_payload["system"] = "\n\n".join(system_messages)
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(f"{self.base_url}/v1/messages", json=request_payload, headers=headers)
+            response.raise_for_status()
+            body = response.json()
+
+        content = _coerce_chat_text(body.get("content"))
+        if not content:
+            raise RuntimeError("Empty assistant response")
+        usage = body.get("usage") or {}
+        return body.get("model") or model, content, {
+            "prompt_tokens": int(usage.get("input_tokens", 0)),
+            "completion_tokens": int(usage.get("output_tokens", 0)),
+            "total_tokens": int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0)),
+        }
+
+
+LLM_GATEWAY = LLMGateway()
+
+
 def _get_openai_base_url() -> str:
-    return os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    return _env_first("LLM_BASE_URL", "OPENAI_BASE_URL", default="https://api.minimaxi.com/v1").rstrip("/")
 
 
 def _is_ollama_base_url(base_url: str) -> bool:
@@ -265,14 +401,14 @@ def _resolve_chat_options(base_url: str, temperature: Any, max_tokens: Any):
     else:
         resolved_max_tokens = 512
 
-    resolved_timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "180"))
+    resolved_timeout = float(_env_first("LLM_TIMEOUT_SECONDS", "OPENAI_TIMEOUT_SECONDS", default="180"))
     return resolved_temperature, resolved_max_tokens, resolved_timeout
 
 # OpenAI 兼容接口处理器
 def _create_chat_llm(model: Optional[str], temperature: Any, max_tokens: Any):
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    api_key = _env_first("LLM_API_KEY", "OPENAI_API_KEY", default="")
     if not api_key or api_key in ("your-api-key-here", "sk-xxx"):
-        raise RuntimeError("OPENAI_API_KEY is not configured")
+        raise RuntimeError("LLM_API_KEY is not configured")
 
     from langchain_openai import ChatOpenAI
 
@@ -291,7 +427,7 @@ def _create_chat_llm(model: Optional[str], temperature: Any, max_tokens: Any):
     return ChatOpenAI(
         api_key=api_key,
         base_url=base_url,
-        model=model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        model=model or _env_first("LLM_MODEL", "OPENAI_MODEL", default="MiniMax-M2.7"),
         temperature=resolved_temperature,
         max_tokens=resolved_max_tokens,
         timeout=resolved_timeout,
@@ -301,7 +437,7 @@ def _create_chat_llm(model: Optional[str], temperature: Any, max_tokens: Any):
 
 
 async def _proxy_ollama_chat_completion(payload: Dict[str, Any], model: str):
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    api_key = _env_first("LLM_API_KEY", "OPENAI_API_KEY", default="")
     base_url = _get_openai_base_url()
     resolved_temperature, resolved_max_tokens, resolved_timeout = _resolve_chat_options(
         base_url, payload.get("temperature"), payload.get("max_tokens")
@@ -362,6 +498,16 @@ def _coerce_chat_text(content: Any) -> str:
                 continue
 
             item_type = item.get("type")
+            if isinstance(item_type, str) and item_type.lower() in {
+                "thinking",
+                "reasoning",
+                "redacted_thinking",
+            }:
+                # Some Anthropic-compatible providers return reasoning blocks
+                # alongside the final answer. They are not user-facing content
+                # and can break downstream JSON parsing if we stringify them.
+                continue
+
             if item_type == "text":
                 text = str(item.get("text", "")).strip()
                 if text:
@@ -375,9 +521,14 @@ def _coerce_chat_text(content: Any) -> str:
                     parts.append(url)
                 continue
 
-            text = str(item).strip()
+            text = str(item.get("text", "")).strip()
             if text:
                 parts.append(text)
+                continue
+
+            content_text = str(item.get("content", "")).strip()
+            if content_text:
+                parts.append(content_text)
 
         return "\n".join(parts)
 
@@ -764,43 +915,82 @@ async def openai_chat_completions(request: Request):
         if not messages:
             return _build_openai_error("No user message found", 400, "invalid_request_error", "400002")
 
-        model = os.getenv("OPENAI_MODEL", "").strip() or payload.get("model") or "gpt-4o-mini"
-        usage = None
         try:
-            if _is_ollama_base_url(_get_openai_base_url()):
-                model, content, usage = await _proxy_ollama_chat_completion(payload, model)
-            else:
-                llm = _create_chat_llm(model, payload.get("temperature"), payload.get("max_tokens"))
-                result = await llm.ainvoke(messages)
-                content = _coerce_chat_text(result.content)
-                if not content:
-                    raise RuntimeError("Empty assistant response")
-
-                usage_metadata = getattr(result, "usage_metadata", None)
-                if isinstance(usage_metadata, dict):
-                    usage = {
-                        "prompt_tokens": int(usage_metadata.get("input_tokens", 0)),
-                        "completion_tokens": int(usage_metadata.get("output_tokens", 0)),
-                        "total_tokens": int(usage_metadata.get("total_tokens", 0)),
-                    }
-        except Exception as llm_error:
-            model = f"{model}-fallback"
-            content = _build_fallback_chat_response(raw_messages, llm_error)
-
-        return JSONResponse(
-            content=_build_openai_response(
+            response_body = await LLM_GATEWAY.create_openai_compatible_response(
+                payload=payload,
                 request_id=f"chatcmpl-{ctx.run_id}",
-                model=model,
-                content=content,
-                usage=usage,
             )
-        )
+        except Exception as llm_error:
+            fallback_model = f"{LLM_GATEWAY._resolve_model(payload)}-fallback"
+            content = _build_fallback_chat_response(raw_messages, llm_error)
+            response_body = _build_openai_response(
+                request_id=f"chatcmpl-{ctx.run_id}",
+                model=fallback_model,
+                content=content,
+                usage=None,
+            )
+
+        return JSONResponse(content=response_body)
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error in openai_chat_completions: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON format")
     except Exception as e:
         logger.error(f"Error in openai_chat_completions: {e}", exc_info=True)
         return _build_openai_error(str(e), 500, "internal_error", "103002")
+    finally:
+        cozeloop.flush()
+
+
+@app.post("/v1/messages")
+async def anthropic_messages(request: Request):
+    """Anthropic Messages API compatibility endpoint."""
+    ctx = new_context(method="anthropic_messages", headers=request.headers)
+    request_context.set(ctx)
+
+    try:
+        payload = await request.json()
+        messages = []
+
+        system_prompt = payload.get("system")
+        if system_prompt:
+            messages.append({"role": "system", "content": _coerce_chat_text(system_prompt)})
+
+        for item in payload.get("messages", []):
+            if not isinstance(item, dict):
+                continue
+            messages.append({
+                "role": item.get("role", "user"),
+                "content": _coerce_chat_text(item.get("content"))
+            })
+
+        openai_like_payload = {
+            "model": payload.get("model"),
+            "messages": messages,
+            "temperature": payload.get("temperature", 0.1),
+            "max_tokens": payload.get("max_tokens", 512),
+        }
+
+        try:
+            body = await LLM_GATEWAY.create_anthropic_response(
+                payload=openai_like_payload,
+                request_id=f"msg_{ctx.run_id}",
+            )
+        except Exception as llm_error:
+            fallback_model = f"{LLM_GATEWAY._resolve_model(openai_like_payload)}-fallback"
+            content = _build_fallback_chat_response(messages, llm_error)
+            body = {
+                "id": f"msg_{ctx.run_id}",
+                "type": "message",
+                "role": "assistant",
+                "model": fallback_model,
+                "content": [{"type": "text", "text": content}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            }
+
+        return JSONResponse(content=body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
     finally:
         cozeloop.flush()
 

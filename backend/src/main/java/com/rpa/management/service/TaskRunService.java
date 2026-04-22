@@ -3,6 +3,7 @@ package com.rpa.management.service;
 import com.rpa.management.dto.TaskRunDTO;
 import com.rpa.management.entity.Task;
 import com.rpa.management.entity.TaskRun;
+import com.rpa.management.repository.TaskRepository;
 import com.rpa.management.repository.TaskRunRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,8 @@ import java.util.stream.Collectors;
 public class TaskRunService {
 
     private final TaskRunRepository taskRunRepository;
+    private final TaskRepository taskRepository;
+    private final WorkflowStepRunService workflowStepRunService;
 
     @Transactional
     public TaskRun createRun(Task task, String triggerType, String workflowSnapshot) {
@@ -97,6 +100,7 @@ public class TaskRunService {
         task.setDuration(0);
         task.setErrorMessage(null);
         task.setResult(null);
+        taskRepository.save(task);
         return saved;
     }
 
@@ -106,6 +110,7 @@ public class TaskRunService {
         run.setProgress(Math.max(0, Math.min(100, progress)));
         TaskRun saved = taskRunRepository.save(run);
         syncTaskFromRun(task, saved);
+        taskRepository.save(task);
         return saved;
     }
 
@@ -127,6 +132,7 @@ public class TaskRunService {
         task.setErrorMessage(null);
         task.setEndTime(saved.getEndTime());
         task.setDuration(saved.getDuration());
+        taskRepository.save(task);
         return saved;
     }
 
@@ -149,6 +155,7 @@ public class TaskRunService {
         task.setResult(saved.getResult());
         task.setEndTime(saved.getEndTime());
         task.setDuration(saved.getDuration());
+        taskRepository.save(task);
         return saved;
     }
 
@@ -165,7 +172,7 @@ public class TaskRunService {
     public List<TaskRunDTO> listRuns(Long taskId) {
         return taskRunRepository.findByTaskIdOrderByCreateTimeDesc(taskId)
                 .stream()
-                .map(this::toDTO)
+                .map(run -> toDTO(run, false))
                 .collect(Collectors.toList());
     }
 
@@ -187,7 +194,7 @@ public class TaskRunService {
     }
 
     public TaskRunDTO getRun(Long runId) {
-        return toDTO(getRunEntity(runId));
+        return toDTO(getRunEntity(runId), true);
     }
 
     @Transactional
@@ -207,6 +214,10 @@ public class TaskRunService {
     }
 
     public TaskRunDTO toDTO(TaskRun run) {
+        return toDTO(run, false);
+    }
+
+    public TaskRunDTO toDTO(TaskRun run, boolean includeStepRuns) {
         return TaskRunDTO.builder()
                 .id(run.getId())
                 .runId(run.getRunId())
@@ -231,6 +242,7 @@ public class TaskRunService {
                 .userName(run.getUserName())
                 .createTime(run.getCreateTime())
                 .updateTime(run.getUpdateTime())
+                .stepRuns(includeStepRuns ? workflowStepRunService.listByTaskRunId(run.getId()) : null)
                 .build();
     }
 

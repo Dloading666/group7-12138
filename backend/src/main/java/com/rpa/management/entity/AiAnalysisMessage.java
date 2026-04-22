@@ -21,8 +21,11 @@ public class AiAnalysisMessage {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "analysis_task_id", nullable = false)
+    @Column(name = "analysis_task_id")
     private Long analysisTaskId;
+
+    @Column(name = "task_run_id")
+    private Long taskRunId;
 
     @Column(nullable = false, length = 20)
     private String role;

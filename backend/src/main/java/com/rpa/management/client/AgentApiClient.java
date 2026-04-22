@@ -122,17 +122,21 @@ public class AgentApiClient {
     }
 
     public String chatCompletion(List<Map<String, String>> messages) {
-        return chatCompletion(messages, null);
+        return chatCompletion(messages, null, null);
     }
 
     public String chatCompletion(List<Map<String, String>> messages, String modelOverride) {
+        return chatCompletion(messages, modelOverride, null);
+    }
+
+    public String chatCompletion(List<Map<String, String>> messages, String modelOverride, Integer maxTokens) {
         Map<String, Object> payload = new HashMap<>();
         if (modelOverride != null && !modelOverride.isBlank()) {
             payload.put("model", modelOverride);
         }
         payload.put("messages", messages);
         payload.put("temperature", 0.1);
-        payload.put("max_tokens", 512);
+        payload.put("max_tokens", maxTokens != null && maxTokens > 0 ? maxTokens : 512);
 
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(

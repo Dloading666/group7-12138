@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+const APP_TITLE = 'RPA 管理平台'
+
 const routes = [
   {
     path: '/login',
@@ -61,12 +63,6 @@ const routes = [
             meta: { title: '任务列表', permission: 'task:list' }
           },
           {
-            path: 'ai',
-            name: 'AIAnalysis',
-            component: () => import('../views/task/AIAnalysis.vue'),
-            meta: { title: 'AI分析', permission: 'task:list' }
-          },
-          {
             path: 'history',
             name: 'TaskHistory',
             component: () => import('../views/task/TaskHistory.vue'),
@@ -83,7 +79,7 @@ const routes = [
       {
         path: 'workflow',
         name: 'Workflow',
-        meta: { title: '流程定义与设计', icon: 'Share', permission: 'workflow:view' },
+        meta: { title: '流程中心', icon: 'Share', permission: 'workflow:view' },
         children: [
           {
             path: 'list',
@@ -114,7 +110,7 @@ const routes = [
             path: 'form/:id?',
             name: 'RobotForm',
             component: () => import('../views/robot/RobotForm.vue'),
-            meta: { title: '机器人表单' }
+            meta: { title: '机器人编辑' }
           }
         ]
       },
@@ -182,7 +178,6 @@ const parseLocalJson = (key, fallback) => {
   if (!raw) {
     return fallback
   }
-
   try {
     return JSON.parse(raw)
   } catch (error) {
@@ -193,31 +188,27 @@ const parseLocalJson = (key, fallback) => {
 
 const checkPermission = (permission) => {
   const userPermissions = parseLocalJson('userPermissions', [])
-  if (!Array.isArray(userPermissions)) {
-    return false
-  }
-
   const userInfo = parseLocalJson('userInfo', {})
   const isAdmin = userInfo?.role === 'ADMIN'
-  if (isAdmin) return true
-  return userPermissions.includes(permission)
+  if (isAdmin) {
+    return true
+  }
+  return Array.isArray(userPermissions) && userPermissions.includes(permission)
 }
 
 router.beforeEach((to, from, next) => {
-  document.title = to.meta.title ? `${to.meta.title} - 管理系统` : '管理系统'
-  const token = localStorage.getItem('token')
+  document.title = to.meta.title ? `${to.meta.title} - ${APP_TITLE}` : APP_TITLE
 
   if (to.path === '/login') {
     next()
     return
   }
 
+  const token = localStorage.getItem('token')
   if (!token) {
     next({
       path: '/login',
-      query: {
-        redirect: to.fullPath
-      }
+      query: { redirect: to.fullPath }
     })
     return
   }

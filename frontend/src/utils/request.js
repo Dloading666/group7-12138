@@ -17,7 +17,7 @@ const shouldSilenceMessage = (config) => config?.silent === true
 
 const service = axios.create({
   baseURL: '/api',
-  timeout: 5000
+  timeout: 10000
 })
 
 const clearAuthState = () => {
@@ -35,13 +35,10 @@ const buildLoginRedirectUrl = () => {
 
   const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
   const params = new URLSearchParams()
-
   if (currentPath && currentPath !== LOGIN_PATH) {
     params.set('redirect', currentPath)
   }
-
-  const query = params.toString()
-  return query ? `${LOGIN_PATH}?${query}` : LOGIN_PATH
+  return params.toString() ? `${LOGIN_PATH}?${params.toString()}` : LOGIN_PATH
 }
 
 const redirectToLogin = (message, silent = false) => {
@@ -51,11 +48,7 @@ const redirectToLogin = (message, silent = false) => {
     ElMessage.error(message)
   }
 
-  if (redirectingToLogin) {
-    return
-  }
-
-  if (isLoginPage()) {
+  if (redirectingToLogin || isLoginPage()) {
     return
   }
 
@@ -63,24 +56,37 @@ const redirectToLogin = (message, silent = false) => {
   window.location.replace(buildLoginRedirectUrl())
 }
 
+const extractErrorMessage = (payload) => {
+  if (!payload) {
+    return ''
+  }
+  if (typeof payload === 'string') {
+    return payload
+  }
+  if (payload.message) {
+    return String(payload.message)
+  }
+  if (payload.data && typeof payload.data === 'object') {
+    return Object.values(payload.data)
+      .flat()
+      .map((item) => String(item))
+      .join(', ')
+  }
+  return ''
+}
+
 const isAuthLikeFailure = (status, data) => {
   if (status === 401) {
     return true
   }
-
-  if (status !== 403) {
+  if (status !== 403 || !localStorage.getItem('token')) {
     return false
   }
 
-  if (!localStorage.getItem('token')) {
-    return false
-  }
-
-  const message = String(data?.message || '')
+  const message = extractErrorMessage(data)
   if (!message) {
     return true
   }
-
   return AUTH_EXPIRED_HINTS.some((hint) => message.includes(hint))
 }
 
@@ -92,10 +98,7 @@ service.interceptors.request.use(
     }
     return config
   },
-  (error) => {
-    console.error('请求错误:', error)
-    return Promise.reject(error)
-  }
+  (error) => Promise.reject(error)
 )
 
 service.interceptors.response.use(
@@ -103,67 +106,53 @@ service.interceptors.response.use(
     const res = response.data
     const silent = shouldSilenceMessage(response.config)
 
-    if (res.code === 401) {
+    if (res?.code === 401) {
       redirectToLogin(res.message || '登录已失效，请重新登录', silent)
       return Promise.reject(new Error(res.message || 'Unauthorized'))
     }
 
-    if (res.code !== 200) {
+    if (res?.code !== 200) {
       if (!silent) {
-        if (res.data && typeof res.data === 'object') {
-          const errorMessages = Object.values(res.data).flat().join(', ')
-          ElMessage.error(errorMessages || res.message || '请求失败')
-        } else {
-          ElMessage.error(res.message || '请求失败')
-        }
+        ElMessage.error(extractErrorMessage(res) || '请求失败')
       }
-
-      return Promise.reject(new Error(res.message || 'Error'))
+      return Promise.reject(new Error(res?.message || 'Request failed'))
     }
 
     return res
   },
   (error) => {
-    console.error('响应错误:', error)
     const silent = shouldSilenceMessage(error.config)
 
     if (error.response) {
       const { status, data } = error.response
 
       if (isAuthLikeFailure(status, data)) {
-        redirectToLogin(data?.message || '登录已失效，请重新登录', silent)
+        redirectToLogin(extractErrorMessage(data) || '登录已失效，请重新登录', silent)
         return Promise.reject(error)
       }
 
       if (!silent) {
-        if (data && data.data && typeof data.data === 'object') {
-          const errorMessages = Object.values(data.data).flat().join(', ')
-          ElMessage.error(errorMessages || data.message || '请求失败')
+        const message = extractErrorMessage(data)
+        if (message) {
+          ElMessage.error(message)
+        } else if (status === 400) {
+          ElMessage.error('请求参数错误')
+        } else if (status === 403) {
+          ElMessage.error('权限不足，无法访问')
+        } else if (status === 404) {
+          ElMessage.error('请求资源不存在')
+        } else if (status === 500) {
+          ElMessage.error('服务端内部错误')
         } else {
-          switch (status) {
-            case 400:
-              ElMessage.error(data?.message || '请求参数错误')
-              break
-            case 403:
-              ElMessage.error(data?.message || '权限不足，无法访问')
-              break
-            case 404:
-              ElMessage.error(data?.message || '请求资源不存在')
-              break
-            case 500:
-              ElMessage.error(data?.message || '服务器内部错误')
-              break
-            default:
-              ElMessage.error(data?.message || '请求失败')
-          }
+          ElMessage.error('请求失败')
         }
       }
     } else if (error.request) {
       if (!silent) {
-        ElMessage.error('网络错误，请检查网络连接')
+        ElMessage.error('网络错误，请检查连接')
       }
     } else if (!silent) {
-      ElMessage.error('请求配置错误')
+      ElMessage.error(error.message || '请求配置错误')
     }
 
     return Promise.reject(error)

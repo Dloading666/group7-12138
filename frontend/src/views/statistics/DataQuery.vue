@@ -3,13 +3,13 @@
     <div class="page-header-bar">
       <div class="page-title-block">
         <h2>采集结果</h2>
-        <p>集中查看真实网站采集结果，并从结果直接发起 AI 分析。</p>
+        <p>集中查看真实网页和接口采集结果；分析入口已并入对应任务的运行详情页。</p>
       </div>
     </div>
 
-    <div class="search-area page-section page-filter-bar">
+    <div class="page-section page-filter-bar">
       <div class="search-item form-field-inline">
-        <span class="search-label">关键字</span>
+        <span class="search-label">关键词</span>
         <el-input v-model="queryForm.keyword" placeholder="标题、摘要或 URL" clearable style="width: 220px" />
       </div>
       <div class="search-item form-field-inline">
@@ -37,13 +37,13 @@
           style="width: 250px"
         />
       </div>
-      <div class="search-buttons page-filter-actions">
+      <div class="page-filter-actions">
         <el-button type="primary" @click="handleQuery">查询</el-button>
         <el-button @click="handleReset">重置</el-button>
       </div>
     </div>
 
-    <div class="table-wrapper page-section page-table-card">
+    <div class="page-section page-table-card">
       <el-table :data="tableData" v-loading="loading" border stripe>
         <el-table-column prop="taskId" label="任务编号" width="180" />
         <el-table-column prop="title" label="页面标题" min-width="220" show-overflow-tooltip />
@@ -60,19 +60,33 @@
             {{ formatDateTime(row.createTime) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right" align="center">
+        <el-table-column label="操作" width="240" fixed="right" align="center">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button link type="primary" @click="handleView(row)">查看</el-button>
-              <el-button link type="success" :disabled="row.status !== 'completed' || !row.taskRecordId" @click="handleAnalyze(row)">AI分析</el-button>
-              <el-button link type="danger" :disabled="!row.taskRecordId" @click="handleDelete(row)">删除</el-button>
+              <el-button
+                link
+                type="success"
+                :disabled="row.status !== 'completed' || !row.taskRecordId"
+                @click="handleAnalyze(row)"
+              >
+                打开分析
+              </el-button>
+              <el-button
+                link
+                type="danger"
+                :disabled="!row.taskRecordId"
+                @click="handleDelete(row)"
+              >
+                删除任务
+              </el-button>
             </div>
           </template>
         </el-table-column>
       </el-table>
     </div>
 
-    <div class="pagination-wrapper page-section page-pagination-bar">
+    <div class="page-section page-pagination-bar">
       <div class="pagination-total">Total {{ total }}</div>
       <el-pagination
         v-model:current-page="pageNum"
@@ -93,10 +107,12 @@
           <el-descriptions-item label="页面标题">{{ currentRow.title || '-' }}</el-descriptions-item>
           <el-descriptions-item label="最终 URL" :span="2">{{ currentRow.finalUrl || '-' }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="statusTypeMap[currentRow.status] || 'info'">{{ statusTextMap[currentRow.status] || currentRow.status }}</el-tag>
+            <el-tag :type="statusTypeMap[currentRow.status] || 'info'">
+              {{ statusTextMap[currentRow.status] || currentRow.status }}
+            </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="结果条数">{{ currentRow.totalCount || 0 }}</el-descriptions-item>
-          <el-descriptions-item label="页数">{{ currentRow.crawledPages || 0 }}</el-descriptions-item>
+          <el-descriptions-item label="抓取页数">{{ currentRow.crawledPages || 0 }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDateTime(currentRow.createTime) }}</el-descriptions-item>
           <el-descriptions-item label="正文摘要" :span="2">
             <pre class="detail-pre">{{ currentRow.summaryText || '-' }}</pre>
@@ -105,10 +121,13 @@
 
         <el-tabs style="margin-top: 16px">
           <el-tab-pane label="结构化结果">
-            <el-empty v-if="!currentRow.structuredData || currentRow.structuredData.length === 0" description="当前记录没有结构化抽取结果" />
+            <el-empty
+              v-if="!currentRow.structuredData || currentRow.structuredData.length === 0"
+              description="当前记录没有结构化抽取结果"
+            />
             <el-table v-else :data="currentRow.structuredData" border stripe max-height="360">
               <el-table-column
-                v-for="(value, key) in currentRow.structuredData[0]"
+                v-for="(_, key) in currentRow.structuredData[0]"
                 :key="key"
                 :prop="key"
                 :label="key"
@@ -123,7 +142,7 @@
         </el-tabs>
       </template>
       <template #footer>
-        <el-button v-if="currentRow?.taskRecordId" type="primary" @click="handleAnalyze(currentRow)">发起 AI 分析</el-button>
+        <el-button v-if="currentRow?.taskRecordId" type="primary" @click="handleAnalyze(currentRow)">打开任务分析</el-button>
         <el-button @click="detailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
@@ -131,7 +150,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getCrawlResultDetail, getCrawlResultList } from '../../api/crawl.js'
@@ -215,13 +234,19 @@ const handleView = async (row) => {
 const handleAnalyze = (row) => {
   if (!row.taskRecordId) return
   detailVisible.value = false
-  router.push(`/task/ai?sourceTaskRecordId=${row.taskRecordId}&sourceTaskId=${row.taskId}`)
+  router.push({
+    path: `/task/detail/${row.taskRecordId}`,
+    query: {
+      tab: 'analysis',
+      ...(row.taskRunId ? { runId: String(row.taskRunId) } : {})
+    }
+  })
 }
 
 const handleDelete = async (row) => {
   if (!row.taskRecordId) return
   try {
-    await ElMessageBox.confirm('确定删除这条采集任务和结果吗？', '提示', { type: 'warning' })
+    await ElMessageBox.confirm('确认删除这条采集任务和结果吗？', '删除确认', { type: 'warning' })
     await deleteTask(row.taskRecordId)
     ElMessage.success('删除成功')
     loadDataList()

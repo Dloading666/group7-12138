@@ -116,8 +116,12 @@
             />
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" min-width="170" />
-        <el-table-column prop="updateTime" label="更新时间" min-width="170" />
+        <el-table-column label="创建时间" min-width="170">
+          <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
+        </el-table-column>
+        <el-table-column label="更新时间" min-width="170">
+          <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
+        </el-table-column>
         <el-table-column label="操作" fixed="right" width="308">
           <template #default="{ row }">
             <div class="table-actions action-buttons">
@@ -387,6 +391,18 @@ const guestCount = computed(() => userList.value.filter((item) => item.role === 
 
 const getRoleLabel = (role) => ROLE_LABELS[role] || role || '-'
 const getRoleTagType = (role) => ROLE_TAG_TYPES[role] || 'info'
+
+const formatTime = (time) => {
+  if (!time) return '-'
+  return new Date(time).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
 
 const isSelectableUser = (row) => row.role !== 'ADMIN'
 

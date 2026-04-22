@@ -141,16 +141,6 @@ export function getWorkflowVersion(id, config = {}) {
   })
 }
 
-export function createWorkflowDraft(data, config = {}) {
-  return request({
-    url: '/workflow-assistant/drafts',
-    method: 'post',
-    data,
-    timeout: 180000,
-    ...config
-  })
-}
-
 export function createWorkflowDebugRun(id, data = {}, config = {}) {
   return request({
     url: `/workflows/${id}/debug-runs`,
