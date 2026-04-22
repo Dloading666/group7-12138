@@ -157,7 +157,7 @@ public class WorkflowService {
     }
 
     public List<WorkflowVersionDTO> getPublishedWorkflowVersions() {
-        return workflowVersionRepository.findByPublishStatusOrderByPublishTimeDesc("published")
+        return workflowVersionRepository.findPublishedVersionsForActiveWorkflows("published")
                 .stream()
                 .map(version -> {
                     version.setGraph(normalizeGraph(version.getGraph()));
